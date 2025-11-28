@@ -33,27 +33,7 @@
   <link rel="manifest" href="manifest.json">
 </head>
 <body>
-  <!-- Firebase configuration and SDKs for Web -->
-  <!-- NOTE: Replace the appId below with the web app's appId from the Firebase Console if needed. -->
-  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-firestore-compat.js"></script>
-  <script>
-    // Firebase web config (values populated from android/app/google-services.json)
-    const firebaseConfig = {
-      apiKey: "AIzaSyAOG-U0a43-bkM_mhwAXHOOcy5nmAVsZKE",
-      authDomain: "itcs444-89d10.firebaseapp.com",
-      projectId: "itcs444-89d10",
-      storageBucket: "itcs444-89d10.firebasestorage.app",
-      messagingSenderId: "559277700334",
-      // The Android appId is different from the web appId; replace this with your Web app's appId
-      appId: "1:559277700334:android:4e1ed58659dfbdb8c2efff"
-    };
-    // Initialize Firebase for the web platform
-    if (!firebase.apps.length) {
-      firebase.initializeApp(firebaseConfig);
-    }
-  </script>
+  <!-- Firebase is initialized from Dart using lib/firebase_options.dart -->
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

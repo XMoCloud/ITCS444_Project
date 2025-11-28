@@ -21,12 +21,14 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyAOG-U0a43-bkM_mhwAXHOOcy5nmAVsZKE',
+    // Use the Web API key (matches web/index.html)
+    apiKey: 'AIzaSyArOTALsz2mJw7FKPJqpQZOiIDH59L541U',
     authDomain: 'itcs444-89d10.firebaseapp.com',
     projectId: 'itcs444-89d10',
     storageBucket: 'itcs444-89d10.firebasestorage.app',
     messagingSenderId: '559277700334',
-    appId: '1:559277700334:web:REPLACE_WITH_WEB_APP_ID',
+    appId: '1:559277700334:web:da49b82ac2c22c99c2efff',
+    measurementId: 'G-JY4KY7JVVM',
   );
 
   static const FirebaseOptions android = FirebaseOptions(
