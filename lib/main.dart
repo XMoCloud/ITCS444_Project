@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -116,16 +117,28 @@ class AuthService {
 class StorageService {
   static final _storage = FirebaseStorage.instance;
 
-  static Future<String?> uploadImage(XFile file, String path) async {
+  static Future<String?> uploadImage(XFile file, String path,
+      {Duration timeout = const Duration(seconds: 25)}) async {
     try {
       final ref = _storage.ref(path);
       Uint8List bytes = await file.readAsBytes();
-      await ref.putData(
+      final uploadTask = ref.putData(
         bytes,
         SettableMetadata(contentType: 'image/jpeg'),
       );
+
+      // Wait for task to complete, with timeout to avoid UI hanging on web when CORS blocks
+      await uploadTask.timeout(timeout, onTimeout: () async {
+        try {
+          // Try to cancel if possible
+          await uploadTask.cancel();
+        } catch (_) {}
+        throw Exception('Upload timed out');
+      });
+
       return await ref.getDownloadURL();
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Storage upload error: $e');
       return null;
     }
   }
@@ -161,6 +174,8 @@ class CareCenterRepository {
     String? donorId,
     String? originalDonationId,
     List<String>? images,
+    String availabilityStatus = 'available',
+    DateTime? maintenanceUntil,
   }) async {
     final docRef = await equipmentCol.add({
       'name': name,
@@ -170,15 +185,15 @@ class CareCenterRepository {
       'quantityTotal': quantityTotal,
       'quantityAvailable': quantityTotal,
       'location': location,
-      'availabilityStatus': 'available', // available, rented, donated, maintenance
+      'availabilityStatus': availabilityStatus, // available, rented, donated, maintenance
       'rentalPricePerDay': rentalPricePerDay,
       'tags': tags ?? [],
       'images': images ?? [],
       'isDonatedItem': isDonatedItem,
       'donorId': donorId,
       'originalDonationId': originalDonationId,
-      'needsMaintenance': false,
-      'maintenanceUntil': null,
+      'needsMaintenance': availabilityStatus == 'maintenance',
+      'maintenanceUntil': maintenanceUntil != null ? Timestamp.fromDate(maintenanceUntil) : null,
       'lastMaintenanceAt': null,
       'rentalCount': 0,
       'donationCount': 0,
@@ -766,7 +781,7 @@ class _RegisterPageState extends State<RegisterPage> {
                       ),
                       const SizedBox(height: 12),
                       DropdownButtonFormField<String>(
-                        value: _preferredContact,
+                        initialValue: _preferredContact,
                         decoration: const InputDecoration(
                           labelText: 'Preferred contact',
                           prefixIcon:
@@ -791,7 +806,7 @@ class _RegisterPageState extends State<RegisterPage> {
                       ),
                       const SizedBox(height: 12),
                       DropdownButtonFormField<String>(
-                        value: _role,
+                        initialValue: _role,
                         decoration: const InputDecoration(
                           labelText: 'Role',
                           prefixIcon: Icon(Icons.security_rounded),
@@ -1042,7 +1057,7 @@ class _InventoryPageState extends State<InventoryPage> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 DropdownButtonFormField<String>(
-                  value: tempType,
+                  initialValue: tempType,
                   decoration: const InputDecoration(labelText: 'Type'),
                   items: const [
                     DropdownMenuItem(value: 'all', child: Text('All types')),
@@ -1058,17 +1073,13 @@ class _InventoryPageState extends State<InventoryPage> {
                 ),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
-                  value: tempStatus,
+                  initialValue: tempStatus,
                   decoration: const InputDecoration(labelText: 'Status'),
                   items: const [
                     DropdownMenuItem(value: 'all', child: Text('All')),
-                    DropdownMenuItem(
-                        value: 'available', child: Text('Available')),
+                    DropdownMenuItem(value: 'available', child: Text('Available')),
                     DropdownMenuItem(value: 'rented', child: Text('Rented')),
-                    DropdownMenuItem(
-                        value: 'donated', child: Text('Donated')),
-                    DropdownMenuItem(
-                        value: 'maintenance', child: Text('Maintenance')),
+                    DropdownMenuItem(value: 'maintenance', child: Text('Maintenance')),
                   ],
                   onChanged: (v) =>
                       setDialogState(() => tempStatus = v ?? 'all'),
@@ -1166,12 +1177,48 @@ class _InventoryPageState extends State<InventoryPage> {
                   if (status == 'maintenance' &&
                       maintTs is Timestamp &&
                       now.isAfter(maintTs.toDate())) {
+                    // Update equipment availability
                     CareCenterRepository.updateEquipment(d.id, {
                       'availabilityStatus': 'available',
                       'needsMaintenance': false,
                       'maintenanceUntil': null,
                     });
                     status = 'available';
+
+                    // Close maintenance records and remove reservation entries related to maintenance
+                    // Fire-and-forget operations (keep UI responsive)
+                    (() async {
+                      try {
+                        final resSnap = await CareCenterRepository.reservationsCol
+                            .where('equipmentId', isEqualTo: d.id)
+                            .where('status', isEqualTo: 'maintenance')
+                            .get();
+                        for (final r in resSnap.docs) {
+                          try {
+                            await CareCenterRepository.deleteReservation(r.id);
+                          } catch (e) {
+                            debugPrint('Failed to delete reservation ${r.id}: $e');
+                          }
+                        }
+
+                        final maintSnap = await CareCenterRepository.maintenanceCol
+                            .where('equipmentId', isEqualTo: d.id)
+                            .where('status', isEqualTo: 'open')
+                            .get();
+                        for (final m in maintSnap.docs) {
+                          try {
+                            await CareCenterRepository.maintenanceCol.doc(m.id).update({
+                              'status': 'closed',
+                              'closedAt': FieldValue.serverTimestamp(),
+                            });
+                          } catch (e) {
+                            debugPrint('Failed to close maintenance record ${m.id}: $e');
+                          }
+                        }
+                      } catch (e) {
+                        debugPrint('Error during maintenance auto-release: $e');
+                      }
+                    })();
                   }
 
                   if (_search.isNotEmpty && !name.contains(_search)) {
@@ -1232,7 +1279,7 @@ class _InventoryPageState extends State<InventoryPage> {
   }
 }
 
-class EquipmentCard extends StatelessWidget {
+class EquipmentCard extends StatefulWidget {
   final String docId;
   final Map<String, dynamic> data;
   final String role;
@@ -1271,15 +1318,120 @@ class EquipmentCard extends StatelessWidget {
   }
 
   @override
+  State<EquipmentCard> createState() => _EquipmentCardState();
+}
+
+class _EquipmentCardState extends State<EquipmentCard> {
+  Timer? _timer;
+  String _timeRemaining = '';
+  bool _autoReleased = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _computeRemaining();
+    _startTimer();
+  }
+
+  void _startTimer() {
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      setState(() => _computeRemaining());
+    });
+  }
+
+  void _computeRemaining() {
+    final data = widget.data;
+    final status = (data['availabilityStatus'] ?? 'available').toString();
+    if (status == 'maintenance') {
+      final maintTs = data['maintenanceUntil'];
+      if (maintTs is Timestamp) {
+        final remaining = maintTs.toDate().difference(DateTime.now());
+        if (remaining.isNegative) {
+          _timeRemaining = 'Done';
+          if (!_autoReleased) {
+            _autoReleased = true;
+            // auto-release on maintenance end
+            (() async {
+              try {
+                await CareCenterRepository.updateEquipment(widget.docId, {
+                  'availabilityStatus': 'available',
+                  'needsMaintenance': false,
+                  'maintenanceUntil': null,
+                });
+                // delete any reservations with status maintenance
+                final resSnap = await CareCenterRepository.reservationsCol
+                    .where('equipmentId', isEqualTo: widget.docId)
+                    .where('status', isEqualTo: 'maintenance')
+                    .get();
+                for (final r in resSnap.docs) {
+                  try {
+                    await CareCenterRepository.deleteReservation(r.id);
+                  } catch (e) {
+                    debugPrint('Failed to delete reservation ${r.id}: $e');
+                  }
+                }
+                final maintSnap = await CareCenterRepository.maintenanceCol
+                    .where('equipmentId', isEqualTo: widget.docId)
+                    .where('status', isEqualTo: 'open')
+                    .get();
+                for (final m in maintSnap.docs) {
+                  try {
+                    await CareCenterRepository.maintenanceCol.doc(m.id).update({
+                      'status': 'closed',
+                      'closedAt': FieldValue.serverTimestamp(),
+                    });
+                  } catch (e) {
+                    debugPrint('Failed to close maintenance record ${m.id}: $e');
+                  }
+                }
+              } catch (e) {
+                debugPrint('Error during per-card maintenance release: $e');
+              }
+            })();
+          }
+        } else {
+          final d = remaining.inDays;
+          final h = remaining.inHours % 24;
+          final m = remaining.inMinutes % 60;
+          final s = remaining.inSeconds % 60;
+          if (d > 0) {
+            _timeRemaining = '$d day${d > 1 ? 's' : ''} left';
+          } else {
+            _timeRemaining = '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+          }
+        }
+      } else {
+        _timeRemaining = '';
+      }
+    } else {
+      _timeRemaining = '';
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final docId = widget.docId;
+    final data = widget.data;
+    final role = widget.role;
+    final userId = widget.userId;
     final name = data['name'] ?? 'Equipment';
     final type = data['type'] ?? 'type';
     final status = (data['availabilityStatus'] ?? 'available').toString();
     final images = (data['images'] as List?)?.cast<String>() ?? [];
     final imageUrl = images.isNotEmpty ? images.first : null;
-    final statusColor = _statusColor(status, context);
+    final statusColor = widget._statusColor(status, context);
     final isAdmin = role == 'admin';
     final canReserve = !isAdmin && status == 'available';
+    final isDonated = (data['isDonatedItem'] ?? false) as bool;
+    final donorId = (data['donorId'] ?? '').toString();
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -1299,9 +1451,24 @@ class EquipmentCard extends StatelessWidget {
                         ? Image.network(
                             imageUrl,
                             fit: BoxFit.cover,
+                            loadingBuilder: (context, child, progress) {
+                              if (progress == null) return child;
+                              return const Center(
+                                child: SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                ),
+                              );
+                            },
+                            errorBuilder: (context, err, stack) => Icon(
+                              widget._typeIcon(type.toString()),
+                              size: 40,
+                              color: Colors.grey[700],
+                            ),
                           )
                         : Icon(
-                            _typeIcon(type.toString()),
+                            widget._typeIcon(type.toString()),
                             size: 40,
                             color: Colors.grey[700],
                           ),
@@ -1320,7 +1487,15 @@ class EquipmentCard extends StatelessWidget {
                             ?.copyWith(fontWeight: FontWeight.w600),
                       ),
                       const SizedBox(height: 4),
-                      Text('Type: $type'),
+                      Row(
+                        children: [
+                          Flexible(child: Text('Type: $type')),
+                          const SizedBox(width: 8),
+                          if ((data['location'] ?? '') != '')
+                            Flexible(
+                                child: Text('Location: ${(data['location'] ?? '')}')),
+                        ],
+                      ),
                       const SizedBox(height: 4),
                       Row(
                         children: [
@@ -1405,8 +1580,72 @@ class EquipmentCard extends StatelessWidget {
                               },
                             ),
                           ),
+                          if (isDonated)
+                            Padding(
+                              padding: const EdgeInsets.only(left: 8.0),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Chip(
+                                    label: const Text('Donated'),
+                                    avatar: const Icon(Icons.volunteer_activism_rounded),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  if (donorId.isNotEmpty)
+                                    FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                                      future: CareCenterRepository.usersCol.doc(donorId).get(),
+                                      builder: (context, snap) {
+                                        if (!snap.hasData) return const SizedBox.shrink();
+                                        final user = snap.data!.data() ?? {};
+                                        final dn = user['name'] ?? '';
+                                        return Text('by ${dn.toString()}', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[700]));
+                                      },
+                                    ),
+                                ],
+                              ),
+                            ),
                         ],
                       ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        children: (
+                            (data['tags'] as List?)?.cast<String>() ?? [])
+                            .map((t) => Chip(label: Text(t)))
+                            .toList(),
+                      ),
+                      if (images.length > 1) ...[
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          height: 56,
+                          child: ListView.builder(
+                            scrollDirection: Axis.horizontal,
+                            itemCount: images.length > 5 ? 5 : images.length,
+                            itemBuilder: (context, index) {
+                              final img = images[index];
+                              return Padding(
+                                padding: const EdgeInsets.only(right: 8.0),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Image.network(img,
+                                      width: 56, height: 56, fit: BoxFit.cover),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                      if (status == 'maintenance' && _timeRemaining.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6.0),
+                          child: Text(
+                            'Maintenance: $_timeRemaining',
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(color: Colors.redAccent),
+                          ),
+                        ),
                     ],
                   ),
                 ),
@@ -1441,6 +1680,7 @@ class EquipmentCard extends StatelessWidget {
                     child: FilledButton.icon(
                       onPressed: () async {
                         await CareCenterRepository.deleteEquipment(docId);
+                        if (!mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(content: Text('Equipment deleted')),
                         );
@@ -1475,7 +1715,7 @@ class EquipmentCard extends StatelessWidget {
                                 equipmentId: docId,
                                 equipmentName: name.toString(),
                                 equipmentType: type.toString(),
-                                renterId: userId!,
+                                renterId: userId,
                               ),
                             ),
                           );
@@ -1511,6 +1751,8 @@ class _AddEquipmentPageState extends State<AddEquipmentPage> {
 
   String _type = 'wheelchair';
   String _condition = 'good';
+  String _availability = 'available';
+  DateTime? _maintenanceUntil;
 
   @override
   void dispose() {
@@ -1541,6 +1783,14 @@ class _AddEquipmentPageState extends State<AddEquipmentPage> {
         'equipment/${DateTime.now().millisecondsSinceEpoch}_${_pickedImage!.name}',
       );
     }
+    if (_pickedImage != null && imageUrl == null) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Image upload failed. Check CORS settings and try again.')),
+      );
+      return;
+    }
 
     final qty = int.tryParse(_qtyCtrl.text) ?? 1;
     final price = _priceCtrl.text.trim().isEmpty
@@ -1557,6 +1807,8 @@ class _AddEquipmentPageState extends State<AddEquipmentPage> {
       rentalPricePerDay: price,
       images: imageUrl != null ? [imageUrl] : [],
       isDonatedItem: false,
+      availabilityStatus: _availability,
+      maintenanceUntil: _availability == 'maintenance' ? _maintenanceUntil : null,
     );
 
     if (!mounted) return;
@@ -1603,7 +1855,7 @@ class _AddEquipmentPageState extends State<AddEquipmentPage> {
                     ),
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
-                      value: _type,
+                      initialValue: _type,
                       decoration: const InputDecoration(
                         labelText: 'Type',
                         prefixIcon: Icon(Icons.list_rounded),
@@ -1621,7 +1873,7 @@ class _AddEquipmentPageState extends State<AddEquipmentPage> {
                     ),
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
-                      value: _condition,
+                      initialValue: _condition,
                       decoration: const InputDecoration(
                         labelText: 'Condition',
                         prefixIcon: Icon(Icons.fact_check_rounded),
@@ -1637,6 +1889,43 @@ class _AddEquipmentPageState extends State<AddEquipmentPage> {
                       onChanged: (v) =>
                           setState(() => _condition = v ?? 'good'),
                     ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      initialValue: _availability,
+                      decoration: const InputDecoration(
+                        labelText: 'Availability status',
+                        prefixIcon: Icon(Icons.info_outline_rounded),
+                      ),
+                      items: const [
+                        DropdownMenuItem(value: 'available', child: Text('Available')),
+                        DropdownMenuItem(value: 'rented', child: Text('Rented')),
+                        DropdownMenuItem(value: 'maintenance', child: Text('Maintenance')),
+                      ],
+                      onChanged: (v) => setState(() => _availability = v ?? 'available'),
+                    ),
+                    if (_availability == 'maintenance') ...[
+                      const SizedBox(height: 12),
+                      ListTile(
+                        leading: const Icon(Icons.build_circle_rounded),
+                        title: Text(_maintenanceUntil == null
+                            ? 'Maintenance until not set'
+                            : 'Until: ${_maintenanceUntil!.toLocal().toString().split(' ').first}'),
+                        trailing: TextButton(
+                          onPressed: () async {
+                            final picked = await showDatePicker(
+                              context: context,
+                              initialDate: DateTime.now(),
+                              firstDate: DateTime.now(),
+                              lastDate: DateTime.now().add(const Duration(days: 365)),
+                            );
+                            if (picked != null) {
+                              setState(() => _maintenanceUntil = picked);
+                            }
+                          },
+                          child: const Text('Set'),
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 12),
                     TextFormField(
                       controller: _descCtrl,
@@ -1725,6 +2014,7 @@ class _EditEquipmentPageState extends State<EditEquipmentPage> {
   String _status = 'available';
   String _type = 'wheelchair';
   String _condition = 'good';
+  DateTime? _maintenanceUntil;
 
   @override
   void initState() {
@@ -1738,6 +2028,9 @@ class _EditEquipmentPageState extends State<EditEquipmentPage> {
     _priceCtrl =
         TextEditingController(text: (d['rentalPricePerDay'] ?? '').toString());
     _status = (d['availabilityStatus'] ?? 'available').toString();
+        if (d['maintenanceUntil'] is Timestamp) {
+          _maintenanceUntil = (d['maintenanceUntil'] as Timestamp).toDate();
+        }
     _type = (d['type'] ?? 'wheelchair').toString();
     _condition = (d['condition'] ?? 'good').toString();
     final tags = (d['tags'] as List?)?.map((e) => e.toString()).toList() ?? [];
@@ -1766,7 +2059,7 @@ class _EditEquipmentPageState extends State<EditEquipmentPage> {
         .where((e) => e.isNotEmpty)
         .toList();
 
-    await CareCenterRepository.updateEquipment(widget.equipmentId, {
+    final updates = <String, dynamic>{
       'name': _nameCtrl.text.trim(),
       'description': _descCtrl.text.trim(),
       'location': _locCtrl.text.trim(),
@@ -1776,7 +2069,17 @@ class _EditEquipmentPageState extends State<EditEquipmentPage> {
       'type': _type,
       'condition': _condition,
       'tags': tags,
-    });
+    };
+    if (_status == 'maintenance') {
+      updates['needsMaintenance'] = true;
+      updates['maintenanceUntil'] = _maintenanceUntil != null
+          ? Timestamp.fromDate(_maintenanceUntil!)
+          : null;
+    } else {
+      updates['needsMaintenance'] = false;
+      updates['maintenanceUntil'] = null;
+    }
+    await CareCenterRepository.updateEquipment(widget.equipmentId, updates);
 
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -1806,7 +2109,7 @@ class _EditEquipmentPageState extends State<EditEquipmentPage> {
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
-                    value: _type,
+                    initialValue: _type,
                     decoration: const InputDecoration(
                       labelText: 'Type',
                       prefixIcon: Icon(Icons.list_rounded),
@@ -1824,7 +2127,7 @@ class _EditEquipmentPageState extends State<EditEquipmentPage> {
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
-                    value: _condition,
+                    initialValue: _condition,
                     decoration: const InputDecoration(
                       labelText: 'Condition',
                       prefixIcon: Icon(Icons.fact_check_rounded),
@@ -1885,7 +2188,7 @@ class _EditEquipmentPageState extends State<EditEquipmentPage> {
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
-                    value: _status,
+                    initialValue: _status,
                     decoration: const InputDecoration(
                       labelText: 'Status',
                       prefixIcon: Icon(Icons.info_outline_rounded),
@@ -1902,6 +2205,29 @@ class _EditEquipmentPageState extends State<EditEquipmentPage> {
                     onChanged: (v) =>
                         setState(() => _status = v ?? 'available'),
                   ),
+                  if (_status == 'maintenance') ...[
+                    const SizedBox(height: 12),
+                    ListTile(
+                      leading: const Icon(Icons.build_circle_rounded),
+                      title: Text(_maintenanceUntil == null
+                          ? 'Maintenance until not set'
+                          : 'Until: ${_maintenanceUntil!.toLocal().toString().split(' ').first}'),
+                      trailing: TextButton(
+                        onPressed: () async {
+                          final picked = await showDatePicker(
+                            context: context,
+                            initialDate: _maintenanceUntil ?? DateTime.now(),
+                            firstDate: DateTime.now(),
+                            lastDate: DateTime.now().add(const Duration(days: 365)),
+                          );
+                          if (picked != null) {
+                            setState(() => _maintenanceUntil = picked);
+                          }
+                        },
+                        child: const Text('Set'),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 16),
                   SizedBox(
                     width: double.infinity,
@@ -1933,7 +2259,6 @@ class ReservationFormPage extends StatefulWidget {
     required this.equipmentType,
     required this.renterId,
   });
-
   @override
   State<ReservationFormPage> createState() => _ReservationFormPageState();
 }
@@ -1964,13 +2289,37 @@ class _ReservationFormPageState extends State<ReservationFormPage> {
     if (picked != null) {
       setState(() {
         _start = picked;
-        _end = _start.add(Duration(days: _duration));
+        if (_end.isBefore(_start)) {
+          _end = _start.add(Duration(days: _duration));
+        }
+      });
+    }
+  }
+
+  Future<void> _pickEnd() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _end,
+      firstDate: _start,
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+    if (picked != null) {
+      setState(() {
+        _end = picked;
+        _duration = _end.difference(_start).inDays;
       });
     }
   }
 
   Future<void> _submit() async {
     setState(() => _loading = true);
+    if (_end.isBefore(_start)) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('End date must be after start date')));
+      return;
+    }
 
     final profileSnap =
         await CareCenterRepository.getUserProfile(widget.renterId);
@@ -2034,32 +2383,19 @@ class _ReservationFormPageState extends State<ReservationFormPage> {
                     leading: const Icon(Icons.today_rounded),
                     title: Text(
                         'Start: ${_start.toLocal().toString().split(' ').first}'),
-                    trailing: !_immediate
-                        ? TextButton(
-                            onPressed: _pickStart,
-                            child: const Text('Change'),
-                          )
-                        : null,
+                    trailing: TextButton(
+                      onPressed: _pickStart,
+                      child: const Text('Change'),
+                    ),
                   ),
                   const SizedBox(height: 8),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Estimated duration: $_duration days'),
-                      Slider(
-                        min: 3,
-                        max: 45,
-                        divisions: 42,
-                        value: _duration.toDouble(),
-                        label: '$_duration days',
-                        onChanged: (v) {
-                          setState(() {
-                            _duration = v.toInt();
-                            _end = _start.add(Duration(days: _duration));
-                          });
-                        },
-                      ),
-                    ],
+                  ListTile(
+                    leading: const Icon(Icons.event_available_rounded),
+                    title: Text('End: ${_end.toLocal().toString().split(' ').first}'),
+                    trailing: TextButton(
+                      onPressed: _pickEnd,
+                      child: const Text('Change'),
+                    ),
                   ),
                   ListTile(
                     leading: const Icon(Icons.event_rounded),
@@ -2204,10 +2540,18 @@ class AdminReservationsPage extends StatelessWidget {
         equipmentId: equipmentId,
       );
     }
-
+    if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Reservation set to $status')),
     );
+    // When after approval/return/decline we want to delete the record
+    if (status == 'returned' || status == 'declined') {
+      try {
+        await CareCenterRepository.deleteReservation(reservationId);
+      } catch (e) {
+        debugPrint('Failed to delete reservation $reservationId: $e');
+      }
+    }
   }
 
   Color _statusColor(String status) {
@@ -2412,6 +2756,7 @@ class AdminReservationsPage extends StatelessWidget {
                                 final dur =
                                     await _pickMaintenanceDuration(context);
                                 if (dur == null) return;
+                                if (!context.mounted) return;
                                 await _changeStatus(
                                   context,
                                   doc.id,
@@ -2431,6 +2776,7 @@ class AdminReservationsPage extends StatelessWidget {
                             onPressed: () async {
                               await CareCenterRepository
                                   .deleteReservation(doc.id);
+                              if (!context.mounted) return;
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
                                     content:
@@ -2737,6 +3083,20 @@ class _DonationTile extends StatelessWidget {
                           ? Image.network(
                               imageUrl,
                               fit: BoxFit.cover,
+                              loadingBuilder: (context, child, progress) {
+                                if (progress == null) return child;
+                                return const Center(
+                                  child: SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  ),
+                                );
+                              },
+                              errorBuilder: (context, err, stack) => const Icon(
+                                Icons.card_giftcard_rounded,
+                                size: 32,
+                              ),
                             )
                           : const Icon(Icons.card_giftcard_rounded,
                               size: 32),
@@ -2756,6 +3116,8 @@ class _DonationTile extends StatelessWidget {
                         ),
                         const SizedBox(height: 4),
                         Text('Donor: $donor'),
+                        const SizedBox(height: 2),
+                        Text('${data['donorContact'] ?? ''}'),
                       ],
                     ),
                   ),
@@ -2777,6 +3139,25 @@ class _DonationTile extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 8),
+              if (photos.length > 1)
+                SizedBox(
+                  height: 56,
+                  child: ListView.builder(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: photos.length > 5 ? 5 : photos.length,
+                    itemBuilder: (context, index) {
+                      final img = photos[index];
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 8.0),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.network(img,
+                              width: 56, height: 56, fit: BoxFit.cover),
+                        ),
+                      );
+                    },
+                  ),
+                ),
               if (isAdmin && isPending)
                 Wrap(
                   spacing: 8,
@@ -2826,6 +3207,7 @@ class _DonationTile extends StatelessWidget {
                           equipmentId: eqId,
                         );
 
+                        if (!context.mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
                               content:
@@ -2855,6 +3237,7 @@ class _DonationTile extends StatelessWidget {
                           donationId: docId,
                         );
 
+                        if (!context.mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
                               content: Text('Donation rejected')),
@@ -2919,6 +3302,14 @@ class _DonationFormPageState extends State<DonationFormPage> {
         _pickedImage!,
         'donations/${DateTime.now().millisecondsSinceEpoch}_${_pickedImage!.name}',
       );
+    }
+    if (_pickedImage != null && imageUrl == null) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Image upload failed. Check CORS settings and try again.')),
+      );
+      return;
     }
 
     final qty = int.tryParse(_qtyCtrl.text) ?? 1;
@@ -2996,7 +3387,7 @@ class _DonationFormPageState extends State<DonationFormPage> {
                     ),
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
-                      value: _itemType,
+                      initialValue: _itemType,
                       decoration: const InputDecoration(
                         labelText: 'Item type',
                         prefixIcon:
@@ -3016,7 +3407,7 @@ class _DonationFormPageState extends State<DonationFormPage> {
                     ),
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
-                      value: _condition,
+                      initialValue: _condition,
                       decoration: const InputDecoration(
                         labelText: 'Condition',
                         prefixIcon: Icon(Icons.fact_check_rounded),
