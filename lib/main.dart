@@ -1,4 +1,3 @@
-import 'dart:typed_data';
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -243,6 +242,7 @@ class CareCenterRepository {
       'progressStep': 1,
       'returnedAt': null,
       'overdueDays': 0,
+      'closedAt': null,
     });
     return docRef.id;
   }
@@ -272,12 +272,16 @@ class CareCenterRepository {
     required String reservationId,
     required String status,
     String? adminId,
+    DateTime? closedAt,
   }) async {
     final updates = <String, dynamic>{
       'status': status,
       'progressStep': _statusToStep(status),
     };
     if (adminId != null) updates['adminId'] = adminId;
+    if (closedAt != null) {
+      updates['closedAt'] = Timestamp.fromDate(closedAt);
+    }
     if (status == 'returned') {
       updates['returnedAt'] = FieldValue.serverTimestamp();
     }
@@ -986,7 +990,7 @@ class _MainShellState extends State<MainShell> {
 /// DASHBOARD
 /// ------------------------------------------------------------
 
-class DashboardPage extends StatelessWidget {
+class DashboardPage extends StatefulWidget {
   final String role;
   final String? userId;
 
@@ -997,23 +1001,433 @@ class DashboardPage extends StatelessWidget {
   });
 
   @override
+  State<DashboardPage> createState() => _DashboardPageState();
+}
+
+class _DashboardPageState extends State<DashboardPage> {
+  @override
+  void initState() {
+    super.initState();
+    if (widget.role == 'admin') {
+      _checkOverdue();
+    }
+  }
+
+  Future<void> _checkOverdue() async {
+    // Simple check to notify admin about overdue items
+    final now = DateTime.now();
+    final snap = await CareCenterRepository.reservationsCol
+        .where('status', isEqualTo: 'checked_out')
+        .get();
+
+    int overdueCount = 0;
+    for (final doc in snap.docs) {
+      final data = doc.data();
+      final end = (data['endDate'] as Timestamp).toDate();
+      if (end.isBefore(now)) {
+        overdueCount++;
+      }
+    }
+
+    if (overdueCount > 0 && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Attention: $overdueCount rental(s) are overdue!'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final tt = Theme.of(context).textTheme;
+    final isAdmin = widget.role == 'admin';
+
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
         Text(
-          role == 'admin' ? 'Welcome back, Admin 👋' : 'Welcome 👋',
+          isAdmin ? 'Welcome back, Admin 👋' : 'Welcome 👋',
           style: tt.titleLarge?.copyWith(fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 4),
         Text(
-          role == 'admin'
+          isAdmin
               ? 'Overview of inventory, rentals and donations.'
               : 'Browse equipment and track your rentals.',
           style: tt.bodyMedium?.copyWith(color: Colors.grey[700]),
         ),
+        const SizedBox(height: 24),
+        if (isAdmin) ...[
+          _buildAdminStats(),
+          const SizedBox(height: 24),
+          _buildAnalytics(context),
+          const SizedBox(height: 24),
+          Text(
+            'Attention Needed',
+            style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 12),
+          _buildOverdueList(),
+        ] else ...[
+          _buildUserStats(),
+          const SizedBox(height: 24),
+          Text(
+            'My Active Rentals',
+            style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 12),
+          _buildUserActiveRentals(),
+        ],
       ],
+    );
+  }
+
+  Widget _buildAdminStats() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: CareCenterRepository.equipmentCol.snapshots(),
+      builder: (context, eqSnap) {
+        final eqDocs = eqSnap.data?.docs ?? [];
+        final total = eqDocs.length;
+        final available =
+            eqDocs.where((d) => d['availabilityStatus'] == 'available').length;
+        final rented =
+            eqDocs.where((d) => d['availabilityStatus'] == 'rented').length;
+        final maintenance =
+            eqDocs.where((d) => d['availabilityStatus'] == 'maintenance').length;
+
+        return Column(
+          children: [
+            Row(
+              children: [
+                Expanded(
+                    child: _StatCard(
+                        title: 'Total Equipment',
+                        value: '$total',
+                        icon: Icons.inventory_2_rounded,
+                        color: Colors.blue)),
+                const SizedBox(width: 12),
+                Expanded(
+                    child: _StatCard(
+                        title: 'Available',
+                        value: '$available',
+                        icon: Icons.check_circle_rounded,
+                        color: Colors.green)),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                    child: _StatCard(
+                        title: 'Rented Out',
+                        value: '$rented',
+                        icon: Icons.shopping_bag_rounded,
+                        color: Colors.orange)),
+                const SizedBox(width: 12),
+                Expanded(
+                    child: _StatCard(
+                        title: 'Maintenance',
+                        value: '$maintenance',
+                        icon: Icons.build_rounded,
+                        color: Colors.red)),
+              ],
+            ),
+            const SizedBox(height: 12),
+            StreamBuilder<QuerySnapshot>(
+              stream: CareCenterRepository.donationsCol
+                  .where('status', isEqualTo: 'pending')
+                  .snapshots(),
+              builder: (ctx, donSnap) {
+                final pendingDonations = donSnap.data?.docs.length ?? 0;
+                if (pendingDonations == 0) return const SizedBox.shrink();
+                return _StatCard(
+                  title: 'Pending Donations',
+                  value: '$pendingDonations',
+                  icon: Icons.volunteer_activism_rounded,
+                  color: Colors.purple,
+                );
+              },
+            ),
+            const SizedBox(height: 12),
+            _buildInsights(eqDocs),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildAnalytics(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Analytics & Reports',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 12),
+        _buildPopularEquipment(),
+      ],
+    );
+  }
+
+  Widget _buildPopularEquipment() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: CareCenterRepository.equipmentCol
+          .orderBy('rentalCount', descending: true)
+          .limit(5)
+          .snapshots(),
+      builder: (context, snap) {
+        if (!snap.hasData || snap.data!.docs.isEmpty) return const SizedBox.shrink();
+        
+        return Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Most Frequently Rented', style: TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                ...snap.data!.docs.map((doc) {
+                  final data = doc.data() as Map<String, dynamic>;
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(data['name'] ?? 'Unknown'),
+                        Text('${data['rentalCount'] ?? 0} rentals', style: const TextStyle(fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                  );
+                }),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildInsights(List<QueryDocumentSnapshot> allEquipment) {
+    if (allEquipment.isEmpty) return const SizedBox.shrink();
+    
+    final total = allEquipment.length;
+    final rented = allEquipment.where((d) => d['availabilityStatus'] == 'rented').length;
+    final maintenance = allEquipment.where((d) => d['availabilityStatus'] == 'maintenance').length;
+    
+    final utilRate = (rented / total * 100).toStringAsFixed(1);
+    final maintRate = (maintenance / total * 100).toStringAsFixed(1);
+    
+    return Card(
+      color: Colors.teal.shade50,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.lightbulb_rounded, color: Colors.teal),
+                const SizedBox(width: 8),
+                Text('Service Insights', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.teal.shade900)),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text('• Utilization Rate: $utilRate% of inventory is currently rented.'),
+            Text('• Maintenance Health: $maintRate% of items are under repair.'),
+            if (rented > total * 0.7) 
+              const Padding(
+                padding: EdgeInsets.only(top: 4.0),
+                child: Text('• High Demand: Consider acquiring more equipment.', style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOverdueList() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: CareCenterRepository.reservationsCol
+          .where('status', isEqualTo: 'checked_out')
+          .snapshots(),
+      builder: (context, snap) {
+        if (!snap.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final now = DateTime.now();
+        final docs = snap.data!.docs.where((d) {
+          final end = (d['endDate'] as Timestamp).toDate();
+          return end.isBefore(now);
+        }).toList();
+
+        if (docs.isEmpty) {
+          return Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: const [
+                  Icon(Icons.check_circle_outline, color: Colors.green),
+                  SizedBox(width: 12),
+                  Text('No overdue rentals. Great job!'),
+                ],
+              ),
+            ),
+          );
+        }
+
+        return Column(
+          children: docs.map((d) {
+            final data = d.data() as Map<String, dynamic>;
+            final end = (data['endDate'] as Timestamp).toDate();
+            final days = now.difference(end).inDays;
+            return Card(
+              color: Colors.red.shade50,
+              margin: const EdgeInsets.only(bottom: 8),
+              child: ListTile(
+                leading: const Icon(Icons.warning_rounded, color: Colors.red),
+                title: Text(data['equipmentName'] ?? 'Equipment'),
+                subtitle: Text(
+                    'Renter: ${data['renterName']}\nOverdue by $days days'),
+                trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 16),
+              ),
+            );
+          }).toList(),
+        );
+      },
+    );
+  }
+
+  Widget _buildUserStats() {
+    if (widget.userId == null) return const SizedBox.shrink();
+    return StreamBuilder<QuerySnapshot>(
+      stream: CareCenterRepository.reservationsCol
+          .where('renterId', isEqualTo: widget.userId)
+          .snapshots(),
+      builder: (context, snap) {
+        final docs = snap.data?.docs ?? [];
+        final active = docs.where((d) => d['status'] == 'checked_out').length;
+        final pending = docs.where((d) => d['status'] == 'pending').length;
+
+        return Row(
+          children: [
+            Expanded(
+                child: _StatCard(
+                    title: 'Active Rentals',
+                    value: '$active',
+                    icon: Icons.shopping_bag_rounded,
+                    color: Colors.blue)),
+            const SizedBox(width: 12),
+            Expanded(
+                child: _StatCard(
+                    title: 'Pending Requests',
+                    value: '$pending',
+                    icon: Icons.hourglass_empty_rounded,
+                    color: Colors.orange)),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildUserActiveRentals() {
+    if (widget.userId == null) return const Text('Sign in to see your rentals');
+    return StreamBuilder<QuerySnapshot>(
+      stream: CareCenterRepository.reservationsCol
+          .where('renterId', isEqualTo: widget.userId)
+          .where('status', isEqualTo: 'checked_out')
+          .snapshots(),
+      builder: (context, snap) {
+        if (!snap.hasData || snap.data!.docs.isEmpty) {
+          return const Card(
+            child: Padding(
+              padding: EdgeInsets.all(16),
+              child: Text('No active rentals at the moment.'),
+            ),
+          );
+        }
+        return Column(
+          children: snap.data!.docs.map((d) {
+            final data = d.data() as Map<String, dynamic>;
+            final end = (data['endDate'] as Timestamp).toDate();
+            final now = DateTime.now();
+            final isOverdue = end.isBefore(now);
+            final daysLeft = end.difference(now).inDays;
+
+            return Card(
+              color: isOverdue ? Colors.red.shade50 : null,
+              margin: const EdgeInsets.only(bottom: 8),
+              child: ListTile(
+                leading: Icon(
+                  isOverdue ? Icons.warning_rounded : Icons.timer_rounded,
+                  color: isOverdue ? Colors.red : Colors.blue,
+                ),
+                title: Text(data['equipmentName'] ?? ''),
+                subtitle: Text(isOverdue
+                    ? 'Overdue by ${now.difference(end).inDays} days'
+                    : '$daysLeft days remaining'),
+              ),
+            );
+          }).toList(),
+        );
+      },
+    );
+  }
+}
+
+class _StatCard extends StatelessWidget {
+  final String title;
+  final String value;
+  final IconData icon;
+  final Color color;
+  final VoidCallback? onTap;
+
+  const _StatCard({
+    required this.title,
+    required this.value,
+    required this.icon,
+    required this.color,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 0,
+      color: color.withOpacity(0.1),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(icon, color: color, size: 28),
+              const SizedBox(height: 12),
+              Text(
+                value,
+                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: color,
+                    ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                title,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: color.withOpacity(0.8),
+                      fontWeight: FontWeight.w500,
+                    ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -1067,6 +1481,8 @@ class _InventoryPageState extends State<InventoryPage> {
                     DropdownMenuItem(
                         value: 'crutches', child: Text('Crutches')),
                     DropdownMenuItem(value: 'bed', child: Text('Hospital bed')),
+                    DropdownMenuItem(value: 'oxygen_machine', child: Text('Oxygen machine')),
+                    DropdownMenuItem(value: 'mobility_scooter', child: Text('Mobility scooter')),
                   ],
                   onChanged: (v) =>
                       setDialogState(() => tempType = v ?? 'all'),
@@ -1195,7 +1611,11 @@ class _InventoryPageState extends State<InventoryPage> {
                             .get();
                         for (final r in resSnap.docs) {
                           try {
-                            await CareCenterRepository.deleteReservation(r.id);
+                            await CareCenterRepository.updateReservationStatus(
+                              reservationId: r.id,
+                              status: 'returned',
+                              closedAt: DateTime.now(),
+                            );
                           } catch (e) {
                             debugPrint('Failed to delete reservation ${r.id}: $e');
                           }
@@ -1303,6 +1723,10 @@ class EquipmentCard extends StatefulWidget {
         return Icons.accessibility_new_rounded;
       case 'bed':
         return Icons.bed_rounded;
+      case 'oxygen_machine':
+        return Icons.air_rounded;
+      case 'mobility_scooter':
+        return Icons.electric_scooter_rounded;
       default:
         return Icons.medical_services_rounded;
     }
@@ -1367,7 +1791,11 @@ class _EquipmentCardState extends State<EquipmentCard> {
                     .get();
                 for (final r in resSnap.docs) {
                   try {
-                    await CareCenterRepository.deleteReservation(r.id);
+                    await CareCenterRepository.updateReservationStatus(
+                      reservationId: r.id,
+                      status: 'returned',
+                      closedAt: DateTime.now(),
+                    );
                   } catch (e) {
                     debugPrint('Failed to delete reservation ${r.id}: $e');
                   }
@@ -1440,12 +1868,13 @@ class _EquipmentCardState extends State<EquipmentCard> {
         child: Column(
           children: [
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 ClipRRect(
                   borderRadius: BorderRadius.circular(12),
                   child: Container(
-                    width: 80,
-                    height: 80,
+                    width: 86,
+                    height: 86,
                     color: Colors.grey[200],
                     child: imageUrl != null
                         ? Image.network(
@@ -1479,141 +1908,131 @@ class _EquipmentCardState extends State<EquipmentCard> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        name.toString(),
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w600),
-                      ),
-                      const SizedBox(height: 4),
                       Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Flexible(child: Text('Type: $type')),
-                          const SizedBox(width: 8),
-                          if ((data['location'] ?? '') != '')
-                            Flexible(
-                                child: Text('Location: ${(data['location'] ?? '')}')),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  name.toString(),
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .titleMedium
+                                      ?.copyWith(fontWeight: FontWeight.w700),
+                                ),
+                                const SizedBox(height: 4),
+                                Text('Type: $type • Condition: ${data['condition'] ?? 'n/a'}'),
+                                if ((data['location'] ?? '').toString().isNotEmpty)
+                                  Text('Location: ${data['location']}'),
+                              ],
+                            ),
+                          ),
                           Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 4),
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
                               color: statusColor.withOpacity(0.1),
                               borderRadius: BorderRadius.circular(999),
                             ),
                             child: Text(
                               status,
-                              style: TextStyle(
-                                color: statusColor,
-                                fontWeight: FontWeight.w500,
-                              ),
+                              style: TextStyle(color: statusColor, fontWeight: FontWeight.w600),
                             ),
                           ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: StreamBuilder<QuerySnapshot>(
-                              stream: CareCenterRepository.reservationsCol
-                                  .where('equipmentId',
-                                      isEqualTo: docId)
-                                  .snapshots(),
-                              builder: (context, snap) {
-                                if (!snap.hasData) {
-                                  return const SizedBox.shrink();
-                                }
-                                final now = DateTime.now();
-                                final docs = snap.data!.docs.where((d) {
-                                  final rd =
-                                      d.data() as Map<String, dynamic>;
-                                  final st =
-                                      (rd['status'] ?? '').toString();
-                                  if (st != 'approved' &&
-                                      st != 'checked_out') {
-                                    return false;
-                                  }
-                                  final end =
-                                      (rd['endDate'] as Timestamp).toDate();
-                                  return end.isAfter(now);
-                                }).toList();
-                                if (docs.isEmpty) {
-                                  return Text(
-                                    'Not rented currently',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodySmall
-                                        ?.copyWith(
-                                            color: Colors.grey[600]),
-                                  );
-                                }
-                                docs.sort((a, b) {
-                                  final ea =
-                                      (a.data() as Map<String, dynamic>)[
-                                          'endDate'] as Timestamp;
-                                  final eb =
-                                      (b.data() as Map<String, dynamic>)[
-                                          'endDate'] as Timestamp;
-                               
-
-                                  return ea.toDate().compareTo(eb.toDate());
-                                });
-                                final soonEnd =
-                                    (docs.first.data()
-                                            as Map<String, dynamic>)[
-                                        'endDate'] as Timestamp;
-                                final days =
-                                    soonEnd.toDate().difference(now).inDays;
-                                final text = days >= 0
-                                    ? 'Remaining: $days day(s)'
-                                    : 'Overdue';
-                                return Text(
-                                  text,
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .bodySmall
-                                      ?.copyWith(
-                                          color: Colors.grey[700]),
-                                );
-                              },
-                            ),
-                          ),
-                          if (isDonated)
-                            Padding(
-                              padding: const EdgeInsets.only(left: 8.0),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Chip(
-                                    label: const Text('Donated'),
-                                    avatar: const Icon(Icons.volunteer_activism_rounded),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  if (donorId.isNotEmpty)
-                                    FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-                                      future: CareCenterRepository.usersCol.doc(donorId).get(),
-                                      builder: (context, snap) {
-                                        if (!snap.hasData) return const SizedBox.shrink();
-                                        final user = snap.data!.data() ?? {};
-                                        final dn = user['name'] ?? '';
-                                        return Text('by ${dn.toString()}', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[700]));
-                                      },
-                                    ),
-                                ],
-                              ),
-                            ),
                         ],
                       ),
                       const SizedBox(height: 8),
                       Wrap(
                         spacing: 8,
-                        children: (
-                            (data['tags'] as List?)?.cast<String>() ?? [])
-                            .map((t) => Chip(label: Text(t)))
-                            .toList(),
+                        runSpacing: 6,
+                        children: [
+                          Chip(
+                            avatar: const Icon(Icons.inventory_2_outlined, size: 18),
+                            label: Text('Qty: ${data['quantityAvailable'] ?? data['quantityTotal'] ?? '-'}'),
+                          ),
+                          if (data['rentalPricePerDay'] != null)
+                            Chip(
+                              avatar: const Icon(Icons.attach_money_rounded, size: 18),
+                              label: Text('Price/day: ${data['rentalPricePerDay']}'),
+                            ),
+                          if (status == 'maintenance' && _timeRemaining.isNotEmpty)
+                            Chip(
+                              avatar: const Icon(Icons.build_rounded, size: 18),
+                              label: Text('Maintenance: $_timeRemaining'),
+                              backgroundColor: Colors.red.shade50,
+                            ),
+                        ],
                       ),
+                      const SizedBox(height: 6),
+                      StreamBuilder<QuerySnapshot>(
+                        stream: CareCenterRepository.reservationsCol
+                            .where('equipmentId', isEqualTo: docId)
+                            .snapshots(),
+                        builder: (context, snap) {
+                          if (!snap.hasData) return const SizedBox.shrink();
+                          final now = DateTime.now();
+                          final docs = snap.data!.docs.where((d) {
+                            final rd = d.data() as Map<String, dynamic>;
+                            final st = (rd['status'] ?? '').toString();
+                            if (st != 'approved' && st != 'checked_out') return false;
+                            final end = (rd['endDate'] as Timestamp).toDate();
+                            return end.isAfter(now);
+                          }).toList();
+                          if (docs.isEmpty) {
+                            return Text(
+                              'Not rented currently',
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[600]),
+                            );
+                          }
+                          docs.sort((a, b) {
+                            final ea = (a.data() as Map<String, dynamic>)['endDate'] as Timestamp;
+                            final eb = (b.data() as Map<String, dynamic>)['endDate'] as Timestamp;
+                            return ea.toDate().compareTo(eb.toDate());
+                          });
+                          final soonEnd = (docs.first.data() as Map<String, dynamic>)['endDate'] as Timestamp;
+                          final days = soonEnd.toDate().difference(now).inDays;
+                          final text = days >= 0 ? 'Remaining: $days day(s)' : 'Overdue';
+                          return Text(text, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[700]));
+                        },
+                      ),
+                      const SizedBox(height: 6),
+                      if (isDonated)
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: const [
+                                Icon(Icons.volunteer_activism_rounded, size: 18, color: Colors.purple),
+                                SizedBox(width: 6),
+                                Text('Donated item', style: TextStyle(fontWeight: FontWeight.w600)),
+                              ],
+                            ),
+                            if (donorId.isNotEmpty)
+                              FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                                future: CareCenterRepository.usersCol.doc(donorId).get(),
+                                builder: (context, snap) {
+                                  if (!snap.hasData) return const SizedBox.shrink();
+                                  final user = snap.data!.data() ?? {};
+                                  final dn = user['name'] ?? '';
+                                  return Padding(
+                                    padding: const EdgeInsets.only(top: 2.0),
+                                    child: Text('Donated by: $dn', style: Theme.of(context).textTheme.bodySmall),
+                                  );
+                                },
+                              ),
+                          ],
+                        ),
+                      const SizedBox(height: 6),
+                      if ((data['tags'] as List?)?.isNotEmpty == true)
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 6,
+                          children: ((data['tags'] as List?)?.cast<String>() ?? [])
+                              .map((t) => Chip(label: Text(t)))
+                              .toList(),
+                        ),
                       if (images.length > 1) ...[
                         const SizedBox(height: 8),
                         SizedBox(
@@ -1627,31 +2046,19 @@ class _EquipmentCardState extends State<EquipmentCard> {
                                 padding: const EdgeInsets.only(right: 8.0),
                                 child: ClipRRect(
                                   borderRadius: BorderRadius.circular(8),
-                                  child: Image.network(img,
-                                      width: 56, height: 56, fit: BoxFit.cover),
+                                  child: Image.network(img, width: 56, height: 56, fit: BoxFit.cover),
                                 ),
                               );
                             },
                           ),
                         ),
                       ],
-                      if (status == 'maintenance' && _timeRemaining.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 6.0),
-                          child: Text(
-                            'Maintenance: $_timeRemaining',
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodySmall
-                                ?.copyWith(color: Colors.redAccent),
-                          ),
-                        ),
                     ],
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
             if (isAdmin)
               Row(
                 children: [
@@ -1746,7 +2153,7 @@ class _AddEquipmentPageState extends State<AddEquipmentPage> {
   final _qtyCtrl = TextEditingController(text: '1');
   final _locCtrl = TextEditingController();
   final _priceCtrl = TextEditingController();
-  XFile? _pickedImage;
+  final _imageCtrl = TextEditingController();
   bool _saving = false;
 
   String _type = 'wheelchair';
@@ -1761,41 +2168,19 @@ class _AddEquipmentPageState extends State<AddEquipmentPage> {
     _qtyCtrl.dispose();
     _locCtrl.dispose();
     _priceCtrl.dispose();
+    _imageCtrl.dispose();
     super.dispose();
-  }
-
-  Future<void> _pickImage() async {
-    final picker = ImagePicker();
-    final img = await picker.pickImage(source: ImageSource.gallery);
-    if (img != null) {
-      setState(() => _pickedImage = img);
-    }
   }
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _saving = true);
 
-    String? imageUrl;
-    if (_pickedImage != null) {
-      imageUrl = await StorageService.uploadImage(
-        _pickedImage!,
-        'equipment/${DateTime.now().millisecondsSinceEpoch}_${_pickedImage!.name}',
-      );
-    }
-    if (_pickedImage != null && imageUrl == null) {
-      if (!mounted) return;
-      setState(() => _saving = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Image upload failed. Check CORS settings and try again.')),
-      );
-      return;
-    }
-
     final qty = int.tryParse(_qtyCtrl.text) ?? 1;
     final price = _priceCtrl.text.trim().isEmpty
         ? null
         : double.tryParse(_priceCtrl.text);
+    final imageUrl = _imageCtrl.text.trim();
 
     await CareCenterRepository.addEquipment(
       name: _nameCtrl.text.trim(),
@@ -1805,7 +2190,7 @@ class _AddEquipmentPageState extends State<AddEquipmentPage> {
       quantityTotal: qty,
       location: _locCtrl.text.trim(),
       rentalPricePerDay: price,
-      images: imageUrl != null ? [imageUrl] : [],
+      images: imageUrl.isNotEmpty ? [imageUrl] : [],
       isDonatedItem: false,
       availabilityStatus: _availability,
       maintenanceUntil: _availability == 'maintenance' ? _maintenanceUntil : null,
@@ -1833,17 +2218,15 @@ class _AddEquipmentPageState extends State<AddEquipmentPage> {
                 key: _formKey,
                 child: Column(
                   children: [
-                    ListTile(
-                      leading: const Icon(Icons.image_rounded),
-                      title: Text(_pickedImage == null
-                          ? 'No image selected'
-                          : _pickedImage!.name),
-                      trailing: OutlinedButton(
-                        onPressed: _pickImage,
-                        child: const Text('Select image'),
+                    TextFormField(
+                      controller: _imageCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Image URL',
+                        prefixIcon: Icon(Icons.link_rounded),
+                        hintText: 'https://example.com/image.jpg',
                       ),
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 12),
                     TextFormField(
                       controller: _nameCtrl,
                       decoration: const InputDecoration(
@@ -1868,6 +2251,8 @@ class _AddEquipmentPageState extends State<AddEquipmentPage> {
                         DropdownMenuItem(
                             value: 'crutches', child: Text('Crutches')),
                         DropdownMenuItem(value: 'bed', child: Text('Bed')),
+                        DropdownMenuItem(value: 'oxygen_machine', child: Text('Oxygen machine')),
+                        DropdownMenuItem(value: 'mobility_scooter', child: Text('Mobility scooter')),
                       ],
                       onChanged: (v) => setState(() => _type = v ?? 'wheelchair'),
                     ),
@@ -2010,6 +2395,7 @@ class _EditEquipmentPageState extends State<EditEquipmentPage> {
   late TextEditingController _qtyCtrl;
   late TextEditingController _priceCtrl;
   late TextEditingController _tagsCtrl;
+  late TextEditingController _imageCtrl;
 
   String _status = 'available';
   String _type = 'wheelchair';
@@ -2027,6 +2413,8 @@ class _EditEquipmentPageState extends State<EditEquipmentPage> {
         TextEditingController(text: (d['quantityTotal'] ?? 1).toString());
     _priceCtrl =
         TextEditingController(text: (d['rentalPricePerDay'] ?? '').toString());
+    final images = (d['images'] as List?)?.cast<String>() ?? [];
+    _imageCtrl = TextEditingController(text: images.isNotEmpty ? images.first : '');
     _status = (d['availabilityStatus'] ?? 'available').toString();
         if (d['maintenanceUntil'] is Timestamp) {
           _maintenanceUntil = (d['maintenanceUntil'] as Timestamp).toDate();
@@ -2045,6 +2433,7 @@ class _EditEquipmentPageState extends State<EditEquipmentPage> {
     _qtyCtrl.dispose();
     _priceCtrl.dispose();
     _tagsCtrl.dispose();
+    _imageCtrl.dispose();
     super.dispose();
   }
 
@@ -2069,12 +2458,19 @@ class _EditEquipmentPageState extends State<EditEquipmentPage> {
       'type': _type,
       'condition': _condition,
       'tags': tags,
+      'images': _imageCtrl.text.trim().isEmpty ? [] : [_imageCtrl.text.trim()],
     };
     if (_status == 'maintenance') {
+      if (_maintenanceUntil == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Select maintenance date & time')), 
+          );
+        }
+        return;
+      }
       updates['needsMaintenance'] = true;
-      updates['maintenanceUntil'] = _maintenanceUntil != null
-          ? Timestamp.fromDate(_maintenanceUntil!)
-          : null;
+      updates['maintenanceUntil'] = Timestamp.fromDate(_maintenanceUntil!);
     } else {
       updates['needsMaintenance'] = false;
       updates['maintenanceUntil'] = null;
@@ -2101,6 +2497,15 @@ class _EditEquipmentPageState extends State<EditEquipmentPage> {
               child: Column(
                 children: [
                   TextFormField(
+                    controller: _imageCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Image URL',
+                      prefixIcon: Icon(Icons.link_rounded),
+                      hintText: 'https://example.com/image.jpg',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
                     controller: _nameCtrl,
                     decoration: const InputDecoration(
                       labelText: 'Name',
@@ -2122,6 +2527,8 @@ class _EditEquipmentPageState extends State<EditEquipmentPage> {
                       DropdownMenuItem(
                           value: 'crutches', child: Text('Crutches')),
                       DropdownMenuItem(value: 'bed', child: Text('Bed')),
+                      DropdownMenuItem(value: 'oxygen_machine', child: Text('Oxygen machine')),
+                      DropdownMenuItem(value: 'mobility_scooter', child: Text('Mobility scooter')),
                     ],
                     onChanged: (v) => setState(() => _type = v ?? 'wheelchair'),
                   ),
@@ -2211,18 +2618,31 @@ class _EditEquipmentPageState extends State<EditEquipmentPage> {
                       leading: const Icon(Icons.build_circle_rounded),
                       title: Text(_maintenanceUntil == null
                           ? 'Maintenance until not set'
-                          : 'Until: ${_maintenanceUntil!.toLocal().toString().split(' ').first}'),
+                          : 'Until: ${_maintenanceUntil!.toLocal()}'),
+                      subtitle: const Text('Select both date and time'),
                       trailing: TextButton(
                         onPressed: () async {
-                          final picked = await showDatePicker(
+                          final pickedDate = await showDatePicker(
                             context: context,
                             initialDate: _maintenanceUntil ?? DateTime.now(),
                             firstDate: DateTime.now(),
                             lastDate: DateTime.now().add(const Duration(days: 365)),
                           );
-                          if (picked != null) {
-                            setState(() => _maintenanceUntil = picked);
-                          }
+                          if (pickedDate == null) return;
+                          final pickedTime = await showTimePicker(
+                            context: context,
+                            initialTime: TimeOfDay.fromDateTime(_maintenanceUntil ?? DateTime.now()),
+                          );
+                          if (pickedTime == null) return;
+                          setState(() {
+                            _maintenanceUntil = DateTime(
+                              pickedDate.year,
+                              pickedDate.month,
+                              pickedDate.day,
+                              pickedTime.hour,
+                              pickedTime.minute,
+                            );
+                          });
                         },
                         child: const Text('Set'),
                       ),
@@ -2384,7 +2804,7 @@ class _ReservationFormPageState extends State<ReservationFormPage> {
                     title: Text(
                         'Start: ${_start.toLocal().toString().split(' ').first}'),
                     trailing: TextButton(
-                      onPressed: _pickStart,
+                      onPressed: _immediate ? null : _pickStart,
                       child: const Text('Change'),
                     ),
                   ),
@@ -2396,11 +2816,6 @@ class _ReservationFormPageState extends State<ReservationFormPage> {
                       onPressed: _pickEnd,
                       child: const Text('Change'),
                     ),
-                  ),
-                  ListTile(
-                    leading: const Icon(Icons.event_rounded),
-                    title: Text(
-                        'End: ${_end.toLocal().toString().split(' ').first}'),
                   ),
                   const SizedBox(height: 16),
                   SizedBox(
@@ -2433,57 +2848,37 @@ class _ReservationFormPageState extends State<ReservationFormPage> {
 /// ADMIN RESERVATIONS (with status change + maintenance timer)
 /// ------------------------------------------------------------
 
-class AdminReservationsPage extends StatelessWidget {
+class AdminReservationsPage extends StatefulWidget {
   final String adminId;
   const AdminReservationsPage({super.key, required this.adminId});
 
-  Future<Duration?> _pickMaintenanceDuration(BuildContext context) async {
-    final hCtrl = TextEditingController(text: '1');
-    final mCtrl = TextEditingController(text: '0');
-    final sCtrl = TextEditingController(text: '0');
+  @override
+  State<AdminReservationsPage> createState() => _AdminReservationsPageState();
+}
 
-    return showDialog<Duration>(
+class _AdminReservationsPageState extends State<AdminReservationsPage> {
+  bool _showHistory = false;
+
+  Future<DateTime?> _pickMaintenanceUntil(BuildContext context) async {
+    final now = DateTime.now();
+    final pickedDate = await showDatePicker(
       context: context,
-      builder: (ctx) {
-        return AlertDialog(
-          title: const Text('Maintenance duration'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: hCtrl,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'Hours'),
-              ),
-              TextField(
-                controller: mCtrl,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'Minutes'),
-              ),
-              TextField(
-                controller: sCtrl,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'Seconds'),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () {
-                final h = int.tryParse(hCtrl.text) ?? 0;
-                final m = int.tryParse(mCtrl.text) ?? 0;
-                final s = int.tryParse(sCtrl.text) ?? 0;
-                Navigator.pop(ctx, Duration(hours: h, minutes: m, seconds: s));
-              },
-              child: const Text('Start'),
-            ),
-          ],
-        );
-      },
+      initialDate: now,
+      firstDate: now,
+      lastDate: now.add(const Duration(days: 365)),
+    );
+    if (pickedDate == null) return null;
+    final pickedTime = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(now),
+    );
+    if (pickedTime == null) return null;
+    return DateTime(
+      pickedDate.year,
+      pickedDate.month,
+      pickedDate.day,
+      pickedTime.hour,
+      pickedTime.minute,
     );
   }
 
@@ -2493,18 +2888,22 @@ class AdminReservationsPage extends StatelessWidget {
     String status, {
     String? equipmentId,
     String? renterId,
-    Duration? maintenanceDuration,
+    DateTime? maintenanceUntil,
   }) async {
     await CareCenterRepository.updateReservationStatus(
       reservationId: reservationId,
       status: status,
-      adminId: adminId,
+      adminId: widget.adminId,
+      closedAt: status == 'returned' || status == 'declined'
+          ? DateTime.now()
+          : null,
     );
 
     if (equipmentId != null) {
-      if (status == 'approved' || status == 'checked_out') {
+      if (status == 'checked_out') {
         await CareCenterRepository.updateEquipment(equipmentId, {
           'availabilityStatus': 'rented',
+          'rentalCount': FieldValue.increment(1),
         });
       } else if (status == 'returned' || status == 'declined') {
         await CareCenterRepository.updateEquipment(equipmentId, {
@@ -2513,8 +2912,7 @@ class AdminReservationsPage extends StatelessWidget {
           'maintenanceUntil': null,
         });
       } else if (status == 'maintenance') {
-        final dur = maintenanceDuration ?? const Duration(hours: 1);
-        final until = DateTime.now().add(dur);
+        final until = maintenanceUntil ?? DateTime.now().add(const Duration(hours: 1));
         await CareCenterRepository.updateEquipment(equipmentId, {
           'availabilityStatus': 'maintenance',
           'needsMaintenance': true,
@@ -2522,7 +2920,7 @@ class AdminReservationsPage extends StatelessWidget {
         });
         await CareCenterRepository.addMaintenanceRecord(
           equipmentId: equipmentId,
-          openedByAdminId: adminId,
+          openedByAdminId: widget.adminId,
           description: 'Sent to maintenance from reservation panel',
           relatedReservationId: reservationId,
           maintenanceUntil: until,
@@ -2544,14 +2942,6 @@ class AdminReservationsPage extends StatelessWidget {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Reservation set to $status')),
     );
-    // When after approval/return/decline we want to delete the record
-    if (status == 'returned' || status == 'declined') {
-      try {
-        await CareCenterRepository.deleteReservation(reservationId);
-      } catch (e) {
-        debugPrint('Failed to delete reservation $reservationId: $e');
-      }
-    }
   }
 
   Color _statusColor(String status) {
@@ -2606,194 +2996,222 @@ class AdminReservationsPage extends StatelessWidget {
           return (cb as Timestamp).compareTo(ca as Timestamp);
         });
 
-        return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: docs.length,
-          itemBuilder: (context, i) {
-            final doc = docs[i];
-            final data = doc.data() as Map<String, dynamic>;
-            final name = data['equipmentName'] ?? 'Equipment';
-            final renter = data['renterName'] ?? 'Renter';
-            final status = (data['status'] ?? 'pending').toString();
-            final start = (data['startDate'] as Timestamp).toDate();
-            final end = (data['endDate'] as Timestamp).toDate();
-            final range =
-                '${start.toLocal().toString().split(' ').first} → ${end.toLocal().toString().split(' ').first}';
+        final activeStatuses = {'pending', 'approved', 'checked_out', 'maintenance'};
+        final historyStatuses = {'returned', 'declined'};
+        final filteredDocs = docs.where((d) {
+          final status = ((d.data() as Map<String, dynamic>)['status'] ?? 'pending').toString();
+          return _showHistory ? historyStatuses.contains(status) : activeStatuses.contains(status);
+        }).toList();
 
-            final isPending = status == 'pending';
-            final isClosed = status == 'declined' ||
-                status == 'returned' ||
-                status == 'maintenance';
-            final cardColor = isClosed ? Colors.grey.shade200 : Colors.white;
-            final opacity = isClosed ? 0.6 : 1.0;
-            final color = _statusColor(status);
+        if (filteredDocs.isEmpty) {
+          return Center(
+            child: Text(_showHistory
+                ? 'No historical reservations yet.'
+                : 'No active reservations yet.'),
+          );
+        }
 
-            return AnimatedOpacity(
-              duration: const Duration(milliseconds: 200),
-              opacity: opacity,
-              child: Card(
-                color: cardColor,
-                margin: const EdgeInsets.only(bottom: 12),
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          const Icon(Icons.event_repeat_rounded),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+        return Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: Wrap(
+                spacing: 8,
+                children: [
+                  ChoiceChip(
+                    label: const Text('Active'),
+                    selected: !_showHistory,
+                    onSelected: (v) {
+                      if (!v) return;
+                      setState(() => _showHistory = false);
+                    },
+                  ),
+                  ChoiceChip(
+                    label: const Text('History'),
+                    selected: _showHistory,
+                    onSelected: (v) {
+                      if (!v) return;
+                      setState(() => _showHistory = true);
+                    },
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: filteredDocs.length,
+                itemBuilder: (context, i) {
+                  final doc = filteredDocs[i];
+                  final data = doc.data() as Map<String, dynamic>;
+                  final name = data['equipmentName'] ?? 'Equipment';
+                  final renter = data['renterName'] ?? 'Renter';
+                  final status = (data['status'] ?? 'pending').toString();
+                  final start = (data['startDate'] as Timestamp).toDate();
+                  final end = (data['endDate'] as Timestamp).toDate();
+                  final range =
+                      '${start.toLocal().toString().split(' ').first} → ${end.toLocal().toString().split(' ').first}';
+
+                  final isPending = status == 'pending';
+                  final isClosed = status == 'declined' ||
+                      status == 'returned' ||
+                      status == 'maintenance';
+                  final cardColor = isClosed ? Colors.grey.shade200 : Colors.white;
+                  final opacity = isClosed ? 0.6 : 1.0;
+                  final color = _statusColor(status);
+
+                  return AnimatedOpacity(
+                    duration: const Duration(milliseconds: 200),
+                    opacity: opacity,
+                    child: Card(
+                      color: cardColor,
+                      margin: const EdgeInsets.only(bottom: 12),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
                               children: [
-                                Text(
-                                  name.toString(),
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .titleMedium
-                                      ?.copyWith(
-                                          fontWeight: FontWeight.w600),
+                                const Icon(Icons.event_repeat_rounded),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        name.toString(),
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .titleMedium
+                                            ?.copyWith(
+                                                fontWeight: FontWeight.w600),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text('Renter: $renter'),
+                                      Text(range),
+                                    ],
+                                  ),
                                 ),
-                                const SizedBox(height: 4),
-                                Text('Renter: $renter'),
-                                Text(range),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: color.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                  child: Text(
+                                    status,
+                                    style: TextStyle(
+                                      color: color,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
                               ],
                             ),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: color.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                            child: Text(
-                              status,
-                              style: TextStyle(
-                                color: color,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 4,
-                        children: [
-                          if (isPending) ...[
-                            FilledButton.icon(
-                              style: FilledButton.styleFrom(
-                                backgroundColor: Colors.green.shade500,
-                              ),
-                              onPressed: () => _changeStatus(
-                                context,
-                                doc.id,
-                                'approved',
-                                equipmentId:
-                                    data['equipmentId'] as String?,
-                                renterId: data['renterId'] as String?,
-                              ),
-                              icon: const Icon(Icons.check_circle_rounded),
-                              label: const Text('Accept'),
-                            ),
-                            FilledButton.icon(
-                              style: FilledButton.styleFrom(
-                                backgroundColor: Colors.red.shade400,
-                              ),
-                              onPressed: () => _changeStatus(
-                                context,
-                                doc.id,
-                                'declined',
-                                equipmentId:
-                                    data['equipmentId'] as String?,
-                                renterId: data['renterId'] as String?,
-                              ),
-                              icon: const Icon(Icons.close_rounded),
-                              label: const Text('Reject'),
-                            ),
-                          ] else if (status == 'approved') ...[
-                            FilledButton.icon(
-                              style: FilledButton.styleFrom(
-                                backgroundColor: Colors.blue.shade500,
-                              ),
-                              onPressed: () => _changeStatus(
-                                context,
-                                doc.id,
-                                'checked_out',
-                                equipmentId:
-                                    data['equipmentId'] as String?,
-                                renterId: data['renterId'] as String?,
-                              ),
-                              icon:
-                                  const Icon(Icons.play_arrow_rounded),
-                              label: const Text('Mark checked out'),
-                            ),
-                          ] else if (status == 'checked_out') ...[
-                            FilledButton.icon(
-                              style: FilledButton.styleFrom(
-                                backgroundColor: Colors.green.shade500,
-                              ),
-                              onPressed: () => _changeStatus(
-                                context,
-                                doc.id,
-                                'returned',
-                                equipmentId:
-                                    data['equipmentId'] as String?,
-                                renterId: data['renterId'] as String?,
-                              ),
-                              icon: const Icon(
-                                  Icons.check_circle_outline_rounded),
-                              label: const Text('Mark returned'),
-                            ),
-                            FilledButton.icon(
-                              style: FilledButton.styleFrom(
-                                backgroundColor: Colors.orange.shade600,
-                              ),
-                              onPressed: () async {
-                                final dur =
-                                    await _pickMaintenanceDuration(context);
-                                if (dur == null) return;
-                                if (!context.mounted) return;
-                                await _changeStatus(
-                                  context,
-                                  doc.id,
-                                  'maintenance',
-                                  equipmentId:
-                                      data['equipmentId'] as String?,
-                                  renterId:
-                                      data['renterId'] as String?,
-                                  maintenanceDuration: dur,
-                                );
-                              },
-                              icon: const Icon(Icons.build_circle_rounded),
-                              label: const Text('Send to maintenance'),
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 4,
+                              children: [
+                                if (isPending && !_showHistory) ...[
+                                  FilledButton.icon(
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: Colors.green.shade500,
+                                    ),
+                                    onPressed: () => _changeStatus(
+                                      context,
+                                      doc.id,
+                                      'checked_out',
+                                      equipmentId:
+                                          data['equipmentId'] as String?,
+                                      renterId: data['renterId'] as String?,
+                                    ),
+                                    icon: const Icon(Icons.check_circle_rounded),
+                                    label: const Text('Accept & Check Out'),
+                                  ),
+                                  FilledButton.icon(
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: Colors.red.shade400,
+                                    ),
+                                    onPressed: () => _changeStatus(
+                                      context,
+                                      doc.id,
+                                      'declined',
+                                      equipmentId:
+                                          data['equipmentId'] as String?,
+                                      renterId: data['renterId'] as String?,
+                                    ),
+                                    icon: const Icon(Icons.close_rounded),
+                                    label: const Text('Reject'),
+                                  ),
+                                ] else if (status == 'checked_out' && !_showHistory) ...[
+                                  FilledButton.icon(
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: Colors.green.shade500,
+                                    ),
+                                    onPressed: () => _changeStatus(
+                                      context,
+                                      doc.id,
+                                      'returned',
+                                      equipmentId:
+                                          data['equipmentId'] as String?,
+                                      renterId: data['renterId'] as String?,
+                                    ),
+                                    icon: const Icon(
+                                        Icons.check_circle_outline_rounded),
+                                    label: const Text('Mark returned'),
+                                  ),
+                                  FilledButton.icon(
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: Colors.orange.shade600,
+                                    ),
+                                    onPressed: () async {
+                                      final until =
+                                          await _pickMaintenanceUntil(context);
+                                      if (until == null) return;
+                                      if (!context.mounted) return;
+                                      await _changeStatus(
+                                        context,
+                                        doc.id,
+                                        'maintenance',
+                                        equipmentId:
+                                            data['equipmentId'] as String?,
+                                        renterId:
+                                            data['renterId'] as String?,
+                                        maintenanceUntil: until,
+                                      );
+                                    },
+                                    icon: const Icon(Icons.build_circle_rounded),
+                                    label: const Text('Send to maintenance'),
+                                  ),
+                                ],
+                                TextButton.icon(
+                                  onPressed: () async {
+                                    await CareCenterRepository
+                                        .deleteReservation(doc.id);
+                                    if (!context.mounted) return;
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                          content:
+                                              Text('Reservation deleted')),
+                                    );
+                                  },
+                                  icon: const Icon(Icons.delete_outline_rounded),
+                                  label: const Text('Delete'),
+                                ),
+                              ],
                             ),
                           ],
-                          TextButton.icon(
-                            onPressed: () async {
-                              await CareCenterRepository
-                                  .deleteReservation(doc.id);
-                              if (!context.mounted) return;
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                    content:
-                                        Text('Reservation deleted')),
-                              );
-                            },
-                            icon: const Icon(Icons.delete_outline_rounded),
-                            label: const Text('Delete'),
-                          ),
-                        ],
+                        ),
                       ),
-                    ],
-                  ),
-                ),
+                    ),
+                  );
+                },
               ),
-            );
-          },
+            ),
+          ],
         );
       },
     );
@@ -2804,9 +3222,23 @@ class AdminReservationsPage extends StatelessWidget {
 /// USER RENTALS
 /// ------------------------------------------------------------
 
-class UserRentalsPage extends StatelessWidget {
+class UserRentalsPage extends StatefulWidget {
   final String? userId;
-  const UserRentalsPage({super.key, required this.userId});
+  final bool initialShowHistory;
+  const UserRentalsPage({super.key, required this.userId, this.initialShowHistory = false});
+
+  @override
+  State<UserRentalsPage> createState() => _UserRentalsPageState();
+}
+
+class _UserRentalsPageState extends State<UserRentalsPage> {
+  late bool _showHistory;
+
+  @override
+  void initState() {
+    super.initState();
+    _showHistory = widget.initialShowHistory;
+  }
 
   Color _statusColor(String status) {
     switch (status) {
@@ -2829,7 +3261,7 @@ class UserRentalsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (userId == null) {
+    if (widget.userId == null) {
       return const Center(
         child: Text('Sign in to view your rentals.'),
       );
@@ -2837,7 +3269,7 @@ class UserRentalsPage extends StatelessWidget {
 
     return StreamBuilder<QuerySnapshot>(
       stream: CareCenterRepository.reservationsCol
-          .where('renterId', isEqualTo: userId)
+          .where('renterId', isEqualTo: widget.userId)
           .snapshots(),
       builder: (context, snap) {
         if (snap.hasError) {
@@ -2858,11 +3290,53 @@ class UserRentalsPage extends StatelessWidget {
           return (db as Timestamp).compareTo(da as Timestamp);
         });
 
-        return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: docs.length,
-          itemBuilder: (context, i) {
-            final data = docs[i].data() as Map<String, dynamic>;
+        final activeStatuses = {'pending', 'approved', 'checked_out', 'maintenance'};
+        final historyStatuses = {'returned', 'declined'};
+        final filteredDocs = docs.where((d) {
+          final status = ((d.data() as Map<String, dynamic>)['status'] ?? 'pending').toString();
+          return _showHistory ? historyStatuses.contains(status) : activeStatuses.contains(status);
+        }).toList();
+
+        if (filteredDocs.isEmpty) {
+          return Center(
+            child: Text(_showHistory
+                ? 'No historical rentals yet.'
+                : 'No active rentals yet.'),
+          );
+        }
+
+        return Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: Wrap(
+                spacing: 8,
+                children: [
+                  ChoiceChip(
+                    label: const Text('Active'),
+                    selected: !_showHistory,
+                    onSelected: (v) {
+                      if (!v) return;
+                      setState(() => _showHistory = false);
+                    },
+                  ),
+                  ChoiceChip(
+                    label: const Text('History'),
+                    selected: _showHistory,
+                    onSelected: (v) {
+                      if (!v) return;
+                      setState(() => _showHistory = true);
+                    },
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: filteredDocs.length,
+                itemBuilder: (context, i) {
+                  final data = filteredDocs[i].data() as Map<String, dynamic>;
             final name = data['equipmentName'] ?? 'Equipment';
             final status = (data['status'] ?? 'pending').toString();
             final color = _statusColor(status);
@@ -2871,48 +3345,51 @@ class UserRentalsPage extends StatelessWidget {
             final range =
                 '${start.toLocal().toString().split(' ').first} → ${end.toLocal().toString().split(' ').first}';
 
-            return Card(
-              margin: const EdgeInsets.only(bottom: 12),
-              child: ListTile(
-                leading: const Icon(Icons.event_repeat_rounded),
-                title: Text(name.toString()),
-                subtitle: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(range),
-                    const SizedBox(height: 2),
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: color.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(999),
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    child: ListTile(
+                      leading: const Icon(Icons.event_repeat_rounded),
+                      title: Text(name.toString()),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(range),
+                          const SizedBox(height: 2),
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: color.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: Text(
+                                  status,
+                                  style: TextStyle(
+                                    color: color,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Step: ${CareCenterRepository.statusToStepPublic(status)}/5',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(color: Colors.grey[600]),
+                              ),
+                            ],
                           ),
-                          child: Text(
-                            status,
-                            style: TextStyle(
-                              color: color,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Step: ${CareCenterRepository.statusToStepPublic(status)}/5',
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodySmall
-                              ?.copyWith(color: Colors.grey[600]),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ],
-                ),
+                  );
+                },
               ),
-            );
-          },
+            ),
+          ],
         );
       },
     );
@@ -2936,6 +3413,10 @@ class DonationsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isAdmin = role == 'admin';
+
+    if (!isAdmin && userId == null) {
+      return const Center(child: Text('Sign in to view your donations.'));
+    }
 
     return Column(
       children: [
@@ -3048,7 +3529,10 @@ class _DonationTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final name = data['itemType'] ?? 'Item';
+    final displayName = (data['donorName'] ?? '').toString().isNotEmpty
+      ? data['donorName']
+      : data['itemType']
+        ?? 'Item';
     final status = (data['status'] ?? 'pending').toString();
     final donor = data['donorName'] ?? 'Donor';
     final color = _statusColor(status);
@@ -3108,7 +3592,7 @@ class _DonationTile extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          name.toString(),
+                          displayName.toString(),
                           style: Theme.of(context)
                               .textTheme
                               .titleMedium
@@ -3173,9 +3657,8 @@ class _DonationTile extends StatelessWidget {
 
                         final eqId =
                             await CareCenterRepository.addEquipment(
-                          name: name.toString(),
-                          type:
-                              (data['itemType'] ?? 'other').toString(),
+                            name: displayName.toString(),
+                            type: (data['itemType'] ?? 'other').toString(),
                           description:
                               (data['description'] ?? 'Donated item')
                                   .toString(),
@@ -3202,7 +3685,7 @@ class _DonationTile extends StatelessWidget {
                           type: 'donation_status',
                           title: 'Donation approved',
                           message:
-                              'Your donation "$name" was added to inventory. Thank you!',
+                              'Your donation "$displayName" was added to inventory. Thank you!',
                           donationId: docId,
                           equipmentId: eqId,
                         );
@@ -3233,7 +3716,7 @@ class _DonationTile extends StatelessWidget {
                           type: 'donation_status',
                           title: 'Donation rejected',
                           message:
-                              'Your donation for "$name" was rejected.',
+                              'Your donation for "$displayName" was rejected.',
                           donationId: docId,
                         );
 
@@ -3270,9 +3753,9 @@ class _DonationFormPageState extends State<DonationFormPage> {
   final _contactCtrl = TextEditingController();
   final _qtyCtrl = TextEditingController(text: '1');
   final _descCtrl = TextEditingController();
+  final _imageCtrl = TextEditingController();
   String _itemType = 'wheelchair';
   String _condition = 'good';
-  XFile? _pickedImage;
   bool _saving = false;
 
   @override
@@ -3281,38 +3764,16 @@ class _DonationFormPageState extends State<DonationFormPage> {
     _contactCtrl.dispose();
     _qtyCtrl.dispose();
     _descCtrl.dispose();
+    _imageCtrl.dispose();
     super.dispose();
-  }
-
-  Future<void> _pickImage() async {
-    final picker = ImagePicker();
-    final img = await picker.pickImage(source: ImageSource.gallery);
-    if (img != null) {
-      setState(() => _pickedImage = img);
-    }
   }
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _saving = true);
 
-    String? imageUrl;
-    if (_pickedImage != null) {
-      imageUrl = await StorageService.uploadImage(
-        _pickedImage!,
-        'donations/${DateTime.now().millisecondsSinceEpoch}_${_pickedImage!.name}',
-      );
-    }
-    if (_pickedImage != null && imageUrl == null) {
-      if (!mounted) return;
-      setState(() => _saving = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Image upload failed. Check CORS settings and try again.')),
-      );
-      return;
-    }
-
     final qty = int.tryParse(_qtyCtrl.text) ?? 1;
+    final imageUrl = _imageCtrl.text.trim();
 
     await CareCenterRepository.addDonation(
       donorId: widget.donorId,
@@ -3322,7 +3783,7 @@ class _DonationFormPageState extends State<DonationFormPage> {
       condition: _condition,
       quantity: qty,
       description: _descCtrl.text.trim(),
-      photos: imageUrl != null ? [imageUrl] : [],
+      photos: imageUrl.isNotEmpty ? [imageUrl] : [],
     );
 
     await CareCenterRepository.addNotification(
@@ -3355,21 +3816,19 @@ class _DonationFormPageState extends State<DonationFormPage> {
                 key: _formKey,
                 child: Column(
                   children: [
-                    ListTile(
-                      leading: const Icon(Icons.image_rounded),
-                      title: Text(_pickedImage == null
-                          ? 'No image selected'
-                          : _pickedImage!.name),
-                      trailing: OutlinedButton(
-                        onPressed: _pickImage,
-                        child: const Text('Select image'),
+                    TextFormField(
+                      controller: _imageCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Image URL',
+                        prefixIcon: Icon(Icons.link_rounded),
+                        hintText: 'https://example.com/image.jpg',
                       ),
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 12),
                     TextFormField(
                       controller: _donorNameCtrl,
                       decoration: const InputDecoration(
-                        labelText: 'Donor name',
+                        labelText: 'Name',
                         prefixIcon: Icon(Icons.person_rounded),
                       ),
                       validator: (v) => v == null || v.trim().isEmpty
@@ -3401,6 +3860,8 @@ class _DonationFormPageState extends State<DonationFormPage> {
                         DropdownMenuItem(
                             value: 'crutches', child: Text('Crutches')),
                         DropdownMenuItem(value: 'bed', child: Text('Bed')),
+                        DropdownMenuItem(value: 'oxygen_machine', child: Text('Oxygen machine')),
+                        DropdownMenuItem(value: 'mobility_scooter', child: Text('Mobility scooter')),
                       ],
                       onChanged: (v) =>
                           setState(() => _itemType = v ?? 'wheelchair'),
@@ -3590,8 +4051,18 @@ class ProfilePage extends StatelessWidget {
                   ListTile(
                     leading: const Icon(Icons.history_rounded),
                     title: const Text('Rental & donation history'),
-                    subtitle:
-                        const Text('Check Rentals and Donations tabs'),
+                    subtitle: const Text('View your full history'),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => UserHistoryPage(
+                            userId: userId!,
+                            role: roleStr,
+                          ),
+                        ),
+                      );
+                    },
                   ),
                 ],
               ),
@@ -3607,6 +4078,36 @@ class ProfilePage extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+class UserHistoryPage extends StatelessWidget {
+  final String userId;
+  final String role;
+  const UserHistoryPage({super.key, required this.userId, required this.role});
+
+  @override
+  Widget build(BuildContext context) {
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Your history'),
+          bottom: const TabBar(
+            tabs: [
+              Tab(text: 'Rentals'),
+              Tab(text: 'Donations'),
+            ],
+          ),
+        ),
+        body: TabBarView(
+          children: [
+            UserRentalsPage(userId: userId, initialShowHistory: true),
+            DonationsPage(role: role, userId: userId),
+          ],
+        ),
+      ),
     );
   }
 }
