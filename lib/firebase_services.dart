@@ -185,6 +185,8 @@ class CareCenterRepository {
         return 2;
       case 'checked_out':
         return 3;
+      case 'return_requested':
+        return 4;
       case 'returned':
         return 4;
       case 'maintenance':
@@ -249,6 +251,15 @@ class CareCenterRepository {
       'reviewerAdminId': null,
       'linkedEquipmentId': null,
     });
+
+    // Notify admins about new donation
+    await notifyAdmins(
+      type: 'new_donation',
+      title: 'New Donation Submitted',
+      message: '$donorName submitted a donation of $quantity $itemType(s).',
+      donationId: docRef.id,
+    );
+
     return docRef.id;
   }
 
@@ -288,6 +299,28 @@ class CareCenterRepository {
       'equipmentId': equipmentId,
       'donationId': donationId,
     });
+  }
+
+  static Future<void> notifyAdmins({
+    required String type,
+    required String title,
+    required String message,
+    String? reservationId,
+    String? equipmentId,
+    String? donationId,
+  }) async {
+    final admins = await usersCol.where('role', isEqualTo: 'admin').get();
+    for (final doc in admins.docs) {
+      await addNotification(
+        userId: doc.id,
+        type: type,
+        title: title,
+        message: message,
+        reservationId: reservationId,
+        equipmentId: equipmentId,
+        donationId: donationId,
+      );
+    }
   }
 
   // MAINTENANCE

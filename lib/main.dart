@@ -10,6 +10,8 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 
 import 'firebase_options.dart';
+import 'services/notification_manager.dart';
+import 'ui/custom_toast.dart';
 
 /// ------------------------------------------------------------
 /// MAIN
@@ -255,6 +257,8 @@ class CareCenterRepository {
         return 2;
       case 'checked_out':
         return 3;
+      case 'return_requested':
+        return 4;
       case 'returned':
         return 4;
       case 'maintenance':
@@ -295,6 +299,51 @@ class CareCenterRepository {
     await reservationsCol.doc(reservationId).delete();
   }
 
+  // NOTIFICATIONS
+  static Future<void> addNotification({
+    required String userId,
+    required String type,
+    required String title,
+    required String message,
+    String? reservationId,
+    String? equipmentId,
+    String? donationId,
+  }) async {
+    await notificationsCol.add({
+      'userId': userId,
+      'type': type,
+      'title': title,
+      'message': message,
+      'createdAt': FieldValue.serverTimestamp(),
+      'isRead': false,
+      'reservationId': reservationId,
+      'equipmentId': equipmentId,
+      'donationId': donationId,
+    });
+  }
+
+  static Future<void> notifyAdmins({
+    required String type,
+    required String title,
+    required String message,
+    String? reservationId,
+    String? equipmentId,
+    String? donationId,
+  }) async {
+    final admins = await usersCol.where('role', isEqualTo: 'admin').get();
+    for (final doc in admins.docs) {
+      await addNotification(
+        userId: doc.id,
+        type: type,
+        title: title,
+        message: message,
+        reservationId: reservationId,
+        equipmentId: equipmentId,
+        donationId: donationId,
+      );
+    }
+  }
+
   // DONATIONS
   static Future<String> addDonation({
     String? donorId,
@@ -321,6 +370,15 @@ class CareCenterRepository {
       'reviewerAdminId': null,
       'linkedEquipmentId': null,
     });
+
+    // Notify admins about new donation
+    await notifyAdmins(
+      type: 'new_donation',
+      title: 'New Donation Submitted',
+      message: '$donorName submitted a donation of $quantity $itemType(s).',
+      donationId: docRef.id,
+    );
+
     return docRef.id;
   }
 
@@ -339,28 +397,6 @@ class CareCenterRepository {
     await donationsCol.doc(donationId).update(updates);
   }
 
-  // NOTIFICATIONS
-  static Future<void> addNotification({
-    required String userId,
-    required String type,
-    required String title,
-    required String message,
-    String? reservationId,
-    String? equipmentId,
-    String? donationId,
-  }) async {
-    await notificationsCol.add({
-      'userId': userId,
-      'type': type,
-      'title': title,
-      'message': message,
-      'createdAt': FieldValue.serverTimestamp(),
-      'isRead': false,
-      'reservationId': reservationId,
-      'equipmentId': equipmentId,
-      'donationId': donationId,
-    });
-  }
 
   // MAINTENANCE
   static Future<String> addMaintenanceRecord({
@@ -432,9 +468,7 @@ class _LoginPageState extends State<LoginPage> {
       if (user == null) {
         if (!mounted) return;
         setState(() => _loading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Login failed')),
-        );
+        ToastService.showError(context, 'Error', 'Login failed');
         return;
       }
 
@@ -454,15 +488,11 @@ class _LoginPageState extends State<LoginPage> {
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
       setState(() => _loading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message ?? 'Authentication error')),
-      );
+      ToastService.showError(context, 'Error', e.message ?? 'Authentication error');
     } catch (_) {
       if (!mounted) return;
       setState(() => _loading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Unexpected error')),
-      );
+      ToastService.showError(context, 'Error', 'Unexpected error');
     }
   }
 
@@ -706,15 +736,11 @@ class _RegisterPageState extends State<RegisterPage> {
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
       setState(() => _loading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message ?? 'Registration error')),
-      );
+      ToastService.showError(context, 'Error', e.message ?? 'Registration error');
     } catch (_) {
       if (!mounted) return;
       setState(() => _loading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Unexpected error')),
-      );
+      ToastService.showError(context, 'Error', 'Unexpected error');
     }
   }
 
@@ -891,6 +917,21 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   int _index = 0;
 
+  @override
+  void initState() {
+    super.initState();
+    if (widget.userId != null) {
+      // Initialize notification system
+      NotificationManager.init(context, widget.userId!, widget.role);
+    }
+  }
+
+  @override
+  void dispose() {
+    NotificationManager.dispose();
+    super.dispose();
+  }
+
   List<Widget> get _pages => [
         DashboardPage(role: widget.role, userId: widget.userId),
         InventoryPage(role: widget.role, userId: widget.userId),
@@ -1030,13 +1071,7 @@ class _DashboardPageState extends State<DashboardPage> {
     }
 
     if (overdueCount > 0 && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Attention: $overdueCount rental(s) are overdue!'),
-          backgroundColor: Colors.red,
-          duration: const Duration(seconds: 5),
-        ),
-      );
+      ToastService.showWarning(context, 'Attention', '$overdueCount rental(s) are overdue!');
     }
   }
 
@@ -1923,7 +1958,7 @@ class _EquipmentCardState extends State<EquipmentCard> {
                                       ?.copyWith(fontWeight: FontWeight.w700),
                                 ),
                                 const SizedBox(height: 4),
-                                Text('Type: $type • Condition: ${data['condition'] ?? 'n/a'}'),
+                                Text('Type: ${formatEnumString(type.toString())} • Condition: ${data['condition'] ?? 'n/a'}'),
                                 if ((data['location'] ?? '').toString().isNotEmpty)
                                   Text('Location: ${data['location']}'),
                               ],
@@ -1936,7 +1971,7 @@ class _EquipmentCardState extends State<EquipmentCard> {
                               borderRadius: BorderRadius.circular(999),
                             ),
                             child: Text(
-                              status,
+                              formatEnumString(status),
                               style: TextStyle(color: statusColor, fontWeight: FontWeight.w600),
                             ),
                           ),
@@ -1990,7 +2025,22 @@ class _EquipmentCardState extends State<EquipmentCard> {
                             final eb = (b.data() as Map<String, dynamic>)['endDate'] as Timestamp;
                             return ea.toDate().compareTo(eb.toDate());
                           });
-                          final soonEnd = (docs.first.data() as Map<String, dynamic>)['endDate'] as Timestamp;
+                          
+                          // Find the first 'checked_out' reservation to show remaining time
+                          final checkedOutDocs = docs.where((d) => (d.data() as Map<String, dynamic>)['status'] == 'checked_out');
+                          final activeRental = checkedOutDocs.isNotEmpty ? checkedOutDocs.first : docs.first;
+                          
+                          final rd = activeRental.data() as Map<String, dynamic>;
+                          final st = (rd['status'] ?? '').toString();
+                          
+                          if (st == 'approved') {
+                             return Text(
+                              'Reserved (Not picked up)',
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.blue[700]),
+                            );
+                          }
+
+                          final soonEnd = (rd['endDate'] as Timestamp);
                           final days = soonEnd.toDate().difference(now).inDays;
                           final text = days >= 0 ? 'Remaining: $days day(s)' : 'Overdue';
                           return Text(text, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[700]));
@@ -2088,9 +2138,7 @@ class _EquipmentCardState extends State<EquipmentCard> {
                       onPressed: () async {
                         await CareCenterRepository.deleteEquipment(docId);
                         if (!mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Equipment deleted')),
-                        );
+                        ToastService.showSuccess(context, 'Success', 'Equipment deleted');
                       },
                       style: FilledButton.styleFrom(
                         backgroundColor: Colors.red.shade400,
@@ -2105,14 +2153,10 @@ class _EquipmentCardState extends State<EquipmentCard> {
               Align(
                 alignment: Alignment.centerRight,
                 child: FilledButton.icon(
-                  onPressed: canReserve
+                  onPressed: !isAdmin
                       ? () {
                           if (userId == null) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                  content: Text(
-                                      'Sign in to reserve equipment.')),
-                            );
+                            ToastService.showInfo(context, 'Info', 'Sign in to reserve equipment.');
                             return;
                           }
                           Navigator.push(
@@ -2198,9 +2242,7 @@ class _AddEquipmentPageState extends State<AddEquipmentPage> {
 
     if (!mounted) return;
     setState(() => _saving = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Equipment added')),
-    );
+    ToastService.showSuccess(context, 'Success', 'Equipment added');
     Navigator.pop(context);
   }
 
@@ -2463,9 +2505,7 @@ class _EditEquipmentPageState extends State<EditEquipmentPage> {
     if (_status == 'maintenance') {
       if (_maintenanceUntil == null) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Select maintenance date & time')), 
-          );
+          ToastService.showWarning(context, 'Warning', 'Select maintenance date & time');
         }
         return;
       }
@@ -2478,9 +2518,7 @@ class _EditEquipmentPageState extends State<EditEquipmentPage> {
     await CareCenterRepository.updateEquipment(widget.equipmentId, updates);
 
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Equipment updated')),
-    );
+    ToastService.showSuccess(context, 'Success', 'Equipment updated');
     Navigator.pop(context);
   }
 
@@ -2689,6 +2727,7 @@ class _ReservationFormPageState extends State<ReservationFormPage> {
   bool _immediate = true;
   int _duration = 7;
   bool _loading = false;
+  List<DateTimeRange> _blockedRanges = [];
 
   @override
   void initState() {
@@ -2697,14 +2736,98 @@ class _ReservationFormPageState extends State<ReservationFormPage> {
       _duration = 14;
     }
     _end = _start.add(Duration(days: _duration));
+    _fetchBlockedDates();
+  }
+
+  Future<void> _fetchBlockedDates() async {
+    final now = DateTime.now();
+    final ranges = <DateTimeRange>[];
+
+    // 1. Fetch reservations
+    final snap = await CareCenterRepository.reservationsCol
+        .where('equipmentId', isEqualTo: widget.equipmentId)
+        .get();
+
+    for (final doc in snap.docs) {
+      final data = doc.data();
+      final status = (data['status'] ?? '').toString();
+      // Block dates for approved, checked_out, or return_requested
+      if (status == 'approved' || status == 'checked_out' || status == 'return_requested') {
+        final s = (data['startDate'] as Timestamp).toDate();
+        final e = (data['endDate'] as Timestamp).toDate();
+        if (e.isAfter(now)) {
+          ranges.add(DateTimeRange(start: s, end: e));
+        }
+      }
+    }
+
+    // 2. Fetch equipment status for maintenance
+    final eqDoc = await CareCenterRepository.equipmentCol.doc(widget.equipmentId).get();
+    if (eqDoc.exists) {
+      final data = eqDoc.data() as Map<String, dynamic>;
+      final status = data['availabilityStatus'];
+      if (status == 'maintenance') {
+        final untilTs = data['maintenanceUntil'];
+        if (untilTs is Timestamp) {
+          final until = untilTs.toDate();
+          if (until.isAfter(now)) {
+            // Block from now until the exact maintenance end time
+            ranges.add(DateTimeRange(
+              start: now,
+              end: until,
+            ));
+          }
+        }
+      }
+    }
+
+    setState(() => _blockedRanges = ranges);
+  }
+
+  bool _isDateBlocked(DateTime date) {
+    // Normalize date to midnight to match showDatePicker behavior
+    final dayStart = DateTime(date.year, date.month, date.day);
+    final dayEnd = dayStart.add(const Duration(days: 1));
+
+    for (final range in _blockedRanges) {
+      // Check if the day overlaps with any blocked range
+      // Overlap exists if (StartA < EndB) and (EndA > StartB)
+      if (dayStart.isBefore(range.end) && dayEnd.isAfter(range.start)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool _isRangeBlocked(DateTime start, DateTime end) {
+    for (final range in _blockedRanges) {
+      // Check for overlap
+      if (start.isBefore(range.end) && end.isAfter(range.start)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  DateTime _findFirstAvailableDate(DateTime from) {
+    // Start checking from midnight of the given date
+    DateTime date = DateTime(from.year, from.month, from.day);
+    int daysChecked = 0;
+    while (_isDateBlocked(date) && daysChecked < 365) {
+      date = date.add(const Duration(days: 1));
+      daysChecked++;
+    }
+    return date;
   }
 
   Future<void> _pickStart() async {
+    final initialDate = _findFirstAvailableDate(_start);
     final picked = await showDatePicker(
       context: context,
-      initialDate: _start,
+      initialDate: initialDate,
       firstDate: DateTime.now(),
       lastDate: DateTime.now().add(const Duration(days: 365)),
+      selectableDayPredicate: (day) => !_isDateBlocked(day),
     );
     if (picked != null) {
       setState(() {
@@ -2717,11 +2840,16 @@ class _ReservationFormPageState extends State<ReservationFormPage> {
   }
 
   Future<void> _pickEnd() async {
+    var initialDate = _end;
+    if (initialDate.isBefore(_start)) initialDate = _start;
+    initialDate = _findFirstAvailableDate(initialDate);
+
     final picked = await showDatePicker(
       context: context,
-      initialDate: _end,
+      initialDate: initialDate,
       firstDate: _start,
       lastDate: DateTime.now().add(const Duration(days: 365)),
+      selectableDayPredicate: (day) => !_isDateBlocked(day),
     );
     if (picked != null) {
       setState(() {
@@ -2736,8 +2864,14 @@ class _ReservationFormPageState extends State<ReservationFormPage> {
     if (_end.isBefore(_start)) {
       if (!mounted) return;
       setState(() => _loading = false);
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('End date must be after start date')));
+      ToastService.showError(context, 'Error', 'End date must be after start date');
+      return;
+    }
+
+    if (_isRangeBlocked(_start, _end)) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+      ToastService.showError(context, 'Error', 'Selected dates overlap with an existing reservation.');
       return;
     }
 
@@ -2759,8 +2893,9 @@ class _ReservationFormPageState extends State<ReservationFormPage> {
       requestType: _immediate ? 'immediate' : 'date_range',
       userTypeAtBooking: userType,
     );
-    await CareCenterRepository.addNotification(
-      userId: 'admin_inbox',
+    
+    // Notify admins
+    await CareCenterRepository.notifyAdmins(
       type: 'reservation_request',
       title: 'New reservation request',
       message: '$renterName requested ${widget.equipmentName}',
@@ -2768,9 +2903,7 @@ class _ReservationFormPageState extends State<ReservationFormPage> {
 
     if (!mounted) return;
     setState(() => _loading = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Reservation request submitted')),
-    );
+    ToastService.showSuccess(context, 'Success', 'Reservation request submitted');
     Navigator.pop(context);
   }
 
@@ -2890,6 +3023,39 @@ class _AdminReservationsPageState extends State<AdminReservationsPage> {
     String? renterId,
     DateTime? maintenanceUntil,
   }) async {
+    // If checking out, mark equipment as rented
+    if (status == 'checked_out' && equipmentId != null) {
+      await CareCenterRepository.updateEquipment(equipmentId, {
+        'availabilityStatus': 'rented',
+      });
+    }
+    // If returned, mark equipment as available
+    if (status == 'returned' && equipmentId != null) {
+      await CareCenterRepository.updateEquipment(equipmentId, {
+        'availabilityStatus': 'available',
+        'needsMaintenance': false,
+        'maintenanceUntil': null,
+      });
+    }
+    // If maintenance, mark equipment as maintenance
+    if (status == 'maintenance' && equipmentId != null) {
+      await CareCenterRepository.updateEquipment(equipmentId, {
+        'availabilityStatus': 'maintenance',
+        'needsMaintenance': true,
+        'maintenanceUntil': maintenanceUntil != null
+            ? Timestamp.fromDate(maintenanceUntil)
+            : null,
+      });
+      // Also create maintenance record
+      await CareCenterRepository.maintenanceCol.add({
+        'equipmentId': equipmentId,
+        'reportedBy': widget.adminId,
+        'description': 'Routine maintenance from admin panel',
+        'status': 'open',
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+    }
+
     await CareCenterRepository.updateReservationStatus(
       reservationId: reservationId,
       status: status,
@@ -2902,32 +3068,11 @@ class _AdminReservationsPageState extends State<AdminReservationsPage> {
     if (equipmentId != null) {
       if (status == 'checked_out') {
         await CareCenterRepository.updateEquipment(equipmentId, {
-          'availabilityStatus': 'rented',
           'rentalCount': FieldValue.increment(1),
         });
-      } else if (status == 'returned' || status == 'declined') {
-        await CareCenterRepository.updateEquipment(equipmentId, {
-          'availabilityStatus': 'available',
-          'needsMaintenance': false,
-          'maintenanceUntil': null,
-        });
-      } else if (status == 'maintenance') {
-        final until = maintenanceUntil ?? DateTime.now().add(const Duration(hours: 1));
-        await CareCenterRepository.updateEquipment(equipmentId, {
-          'availabilityStatus': 'maintenance',
-          'needsMaintenance': true,
-          'maintenanceUntil': Timestamp.fromDate(until),
-        });
-        await CareCenterRepository.addMaintenanceRecord(
-          equipmentId: equipmentId,
-          openedByAdminId: widget.adminId,
-          description: 'Sent to maintenance from reservation panel',
-          relatedReservationId: reservationId,
-          maintenanceUntil: until,
-        );
       }
+      // Note: availabilityStatus updates are handled above
     }
-
     if (renterId != null) {
       await CareCenterRepository.addNotification(
         userId: renterId,
@@ -2939,9 +3084,7 @@ class _AdminReservationsPageState extends State<AdminReservationsPage> {
       );
     }
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Reservation set to $status')),
-    );
+    ToastService.showSuccess(context, 'Success', 'Reservation set to $status');
   }
 
   Color _statusColor(String status) {
@@ -2974,11 +3117,8 @@ class _AdminReservationsPageState extends State<AdminReservationsPage> {
         if (snap.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
-        if (!snap.hasData || snap.data!.docs.isEmpty) {
-          return const Center(child: Text('No reservations yet.'));
-        }
 
-        final docs = snap.data!.docs.toList();
+        final docs = snap.data?.docs.toList() ?? [];
         // Pending on top, then by createdAt desc
         docs.sort((a, b) {
           final da = a.data() as Map<String, dynamic>;
@@ -2996,19 +3136,22 @@ class _AdminReservationsPageState extends State<AdminReservationsPage> {
           return (cb as Timestamp).compareTo(ca as Timestamp);
         });
 
-        final activeStatuses = {'pending', 'approved', 'checked_out', 'maintenance'};
+        final activeStatuses = {'pending', 'approved', 'checked_out', 'maintenance', 'return_requested'};
         final historyStatuses = {'returned', 'declined'};
         final filteredDocs = docs.where((d) {
           final status = ((d.data() as Map<String, dynamic>)['status'] ?? 'pending').toString();
           return _showHistory ? historyStatuses.contains(status) : activeStatuses.contains(status);
         }).toList();
 
-        if (filteredDocs.isEmpty) {
-          return Center(
-            child: Text(_showHistory
-                ? 'No historical reservations yet.'
-                : 'No active reservations yet.'),
-          );
+        // Identify which equipment is currently physically rented out
+        final rentedEquipmentIds = <String>{};
+        for (final d in docs) {
+          final data = d.data() as Map<String, dynamic>;
+          final st = (data['status'] ?? '').toString();
+          if (st == 'checked_out' || st == 'return_requested') {
+            final eqId = data['equipmentId'] as String?;
+            if (eqId != null) rentedEquipmentIds.add(eqId);
+          }
         }
 
         return Column(
@@ -3038,16 +3181,22 @@ class _AdminReservationsPageState extends State<AdminReservationsPage> {
               ),
             ),
             Expanded(
-              child: ListView.builder(
-                padding: const EdgeInsets.all(16),
-                itemCount: filteredDocs.length,
-                itemBuilder: (context, i) {
-                  final doc = filteredDocs[i];
-                  final data = doc.data() as Map<String, dynamic>;
-                  final name = data['equipmentName'] ?? 'Equipment';
-                  final renter = data['renterName'] ?? 'Renter';
-                  final status = (data['status'] ?? 'pending').toString();
-                  final start = (data['startDate'] as Timestamp).toDate();
+              child: filteredDocs.isEmpty
+                  ? Center(
+                      child: Text(_showHistory
+                          ? 'No historical reservations yet.'
+                          : 'No active reservations yet.'),
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: filteredDocs.length,
+                      itemBuilder: (context, i) {
+                        final doc = filteredDocs[i];
+                        final data = doc.data() as Map<String, dynamic>;
+                        final name = data['equipmentName'] ?? 'Equipment';
+                        final renter = data['renterName'] ?? 'Renter';
+                        final status = (data['status'] ?? 'pending').toString();
+                        final start = (data['startDate'] as Timestamp).toDate();
                   final end = (data['endDate'] as Timestamp).toDate();
                   final range =
                       '${start.toLocal().toString().split(' ').first} → ${end.toLocal().toString().split(' ').first}';
@@ -3101,7 +3250,7 @@ class _AdminReservationsPageState extends State<AdminReservationsPage> {
                                     borderRadius: BorderRadius.circular(999),
                                   ),
                                   child: Text(
-                                    status,
+                                    formatEnumString(status),
                                     style: TextStyle(
                                       color: color,
                                       fontWeight: FontWeight.w500,
@@ -3123,13 +3272,13 @@ class _AdminReservationsPageState extends State<AdminReservationsPage> {
                                     onPressed: () => _changeStatus(
                                       context,
                                       doc.id,
-                                      'checked_out',
+                                      'approved',
                                       equipmentId:
                                           data['equipmentId'] as String?,
                                       renterId: data['renterId'] as String?,
                                     ),
                                     icon: const Icon(Icons.check_circle_rounded),
-                                    label: const Text('Accept & Check Out'),
+                                    label: const Text('Accept'),
                                   ),
                                   FilledButton.icon(
                                     style: FilledButton.styleFrom(
@@ -3146,28 +3295,98 @@ class _AdminReservationsPageState extends State<AdminReservationsPage> {
                                     icon: const Icon(Icons.close_rounded),
                                     label: const Text('Reject'),
                                   ),
-                                ] else if (status == 'checked_out' && !_showHistory) ...[
+                                ] else if (status == 'approved' && !_showHistory) ...[
+                                  Builder(
+                                    builder: (context) {
+                                      final eqId = data['equipmentId'] as String?;
+                                      final isBlocked = eqId != null && rentedEquipmentIds.contains(eqId);
+                                      return FilledButton.icon(
+                                        style: FilledButton.styleFrom(
+                                          backgroundColor: isBlocked ? Colors.grey : Colors.purple.shade500,
+                                        ),
+                                        onPressed: isBlocked
+                                            ? null
+                                            : () => _changeStatus(
+                                                  context,
+                                                  doc.id,
+                                                  'checked_out',
+                                                  equipmentId: eqId,
+                                                  renterId: data['renterId'] as String?,
+                                                ),
+                                        icon: const Icon(Icons.outbond_rounded),
+                                        label: const Text('Check Out'),
+                                      );
+                                    }
+                                  ),
                                   FilledButton.icon(
                                     style: FilledButton.styleFrom(
-                                      backgroundColor: Colors.green.shade500,
+                                      backgroundColor: Colors.red.shade400,
                                     ),
                                     onPressed: () => _changeStatus(
                                       context,
                                       doc.id,
-                                      'returned',
+                                      'declined',
                                       equipmentId:
                                           data['equipmentId'] as String?,
                                       renterId: data['renterId'] as String?,
                                     ),
+                                    icon: const Icon(Icons.cancel_rounded),
+                                    label: const Text('Cancel'),
+                                  ),
+                                ] else if ((status == 'checked_out' || status == 'return_requested') && !_showHistory) ...[
+                                  if (status == 'return_requested')
+                                    Padding(
+                                      padding: const EdgeInsets.only(bottom: 8.0),
+                                      child: Row(
+                                        children: [
+                                          Icon(Icons.info_outline_rounded, size: 16, color: data['userReportedMaintenance'] == true ? Colors.orange : Colors.green),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            'User marked as returned${data['userReportedMaintenance'] == true ? ' (Needs Maintenance)' : ''}',
+                                            style: TextStyle(fontWeight: FontWeight.bold, color: data['userReportedMaintenance'] == true ? Colors.orange : Colors.green),
+                                          ),
+                                        ],
+                                      ),
+                                    )
+                                  else
+                                    Padding(
+                                      padding: const EdgeInsets.only(bottom: 8.0),
+                                      child: Row(
+                                        children: [
+                                          const Icon(Icons.info_outline_rounded, size: 16, color: Colors.red),
+                                          const SizedBox(width: 4),
+                                          const Text(
+                                            'Not returned yet',
+                                            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  FilledButton.icon(
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: (status == 'checked_out' || data['userReportedMaintenance'] == true) ? Colors.grey : Colors.green.shade500,
+                                    ),
+                                    onPressed: (status == 'checked_out' || data['userReportedMaintenance'] == true)
+                                        ? null
+                                        : () => _changeStatus(
+                                              context,
+                                              doc.id,
+                                              'returned',
+                                              equipmentId:
+                                                  data['equipmentId'] as String?,
+                                              renterId: data['renterId'] as String?,
+                                            ),
                                     icon: const Icon(
                                         Icons.check_circle_outline_rounded),
                                     label: const Text('Mark returned'),
                                   ),
                                   FilledButton.icon(
                                     style: FilledButton.styleFrom(
-                                      backgroundColor: Colors.orange.shade600,
+                                      backgroundColor: status == 'checked_out' ? Colors.grey : Colors.orange.shade600,
                                     ),
-                                    onPressed: () async {
+                                    onPressed: status == 'checked_out'
+                                        ? null
+                                        : () async {
                                       final until =
                                           await _pickMaintenanceUntil(context);
                                       if (until == null) return;
@@ -3187,20 +3406,6 @@ class _AdminReservationsPageState extends State<AdminReservationsPage> {
                                     label: const Text('Send to maintenance'),
                                   ),
                                 ],
-                                TextButton.icon(
-                                  onPressed: () async {
-                                    await CareCenterRepository
-                                        .deleteReservation(doc.id);
-                                    if (!context.mounted) return;
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                          content:
-                                              Text('Reservation deleted')),
-                                    );
-                                  },
-                                  icon: const Icon(Icons.delete_outline_rounded),
-                                  label: const Text('Delete'),
-                                ),
                               ],
                             ),
                           ],
@@ -3240,6 +3445,97 @@ class _UserRentalsPageState extends State<UserRentalsPage> {
     _showHistory = widget.initialShowHistory;
   }
 
+  Future<void> _showReturnDialog(String reservationId) async {
+    bool needsMaintenance = false;
+    await showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('Return Equipment'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Are you sure you want to return this item?'),
+              const SizedBox(height: 16),
+              CheckboxListTile(
+                title: const Text('Report Maintenance Issue'),
+                subtitle: const Text('Check this if the item is damaged or not working'),
+                value: needsMaintenance,
+                onChanged: (val) => setState(() => needsMaintenance = val ?? false),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                Navigator.pop(context);
+                await CareCenterRepository.reservationsCol.doc(reservationId).update({
+                  'status': 'return_requested',
+                  'userReportedMaintenance': needsMaintenance,
+                });
+                
+                // Notify admins
+                await CareCenterRepository.notifyAdmins(
+                  type: needsMaintenance ? 'maintenance' : 'return_requested',
+                  title: needsMaintenance ? 'Maintenance Reported' : 'Equipment Returned',
+                  message: needsMaintenance 
+                      ? 'A user reported maintenance issue for a returned item.' 
+                      : 'A user has returned an equipment.',
+                  reservationId: reservationId,
+                );
+
+                if (mounted) {
+                  ToastService.showSuccess(context, 'Success', 'Return requested successfully');
+                }
+              },
+              child: const Text('Confirm Return'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _updateReturnDate(String reservationId, DateTime start, DateTime currentEnd) async {
+    // Normalize start date to midnight to ensure valid range
+    final firstDate = DateTime(start.year, start.month, start.day);
+    final lastDate = DateTime(currentEnd.year, currentEnd.month, currentEnd.day);
+    
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: lastDate,
+      firstDate: firstDate,
+      lastDate: lastDate,
+      helpText: 'Select New Return Date',
+    );
+
+    if (picked != null && mounted) {
+      // Set time to end of day (23:59:59) or preserve original time?
+      // Usually end date is inclusive, so let's keep it simple.
+      // We'll just update the date part and keep time or set to end of day.
+      // The original logic seems to use full timestamps.
+      // Let's set it to the same time as the original end date, but on the new day.
+      final newEnd = DateTime(
+        picked.year,
+        picked.month,
+        picked.day,
+        currentEnd.hour,
+        currentEnd.minute,
+        currentEnd.second,
+      );
+
+      await CareCenterRepository.reservationsCol.doc(reservationId).update({
+        'endDate': Timestamp.fromDate(newEnd),
+      });
+
+      ToastService.showSuccess(context, 'Success', 'Return date updated successfully');
+    }
+  }
+
   Color _statusColor(String status) {
     switch (status) {
       case 'pending':
@@ -3248,6 +3544,8 @@ class _UserRentalsPageState extends State<UserRentalsPage> {
         return Colors.blue;
       case 'checked_out':
         return Colors.purple;
+      case 'return_requested':
+        return Colors.orange;
       case 'returned':
         return Colors.green;
       case 'maintenance':
@@ -3278,11 +3576,8 @@ class _UserRentalsPageState extends State<UserRentalsPage> {
         if (snap.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
-        if (!snap.hasData || snap.data!.docs.isEmpty) {
-          return const Center(child: Text('No reservations yet.'));
-        }
-
-        final docs = snap.data!.docs.toList();
+        
+        final docs = snap.data?.docs.toList() ?? [];
         docs.sort((a, b) {
           final da = (a.data() as Map<String, dynamic>)['createdAt'];
           final db = (b.data() as Map<String, dynamic>)['createdAt'];
@@ -3290,20 +3585,12 @@ class _UserRentalsPageState extends State<UserRentalsPage> {
           return (db as Timestamp).compareTo(da as Timestamp);
         });
 
-        final activeStatuses = {'pending', 'approved', 'checked_out', 'maintenance'};
+        final activeStatuses = {'pending', 'approved', 'checked_out', 'maintenance', 'return_requested'};
         final historyStatuses = {'returned', 'declined'};
         final filteredDocs = docs.where((d) {
           final status = ((d.data() as Map<String, dynamic>)['status'] ?? 'pending').toString();
           return _showHistory ? historyStatuses.contains(status) : activeStatuses.contains(status);
         }).toList();
-
-        if (filteredDocs.isEmpty) {
-          return Center(
-            child: Text(_showHistory
-                ? 'No historical rentals yet.'
-                : 'No active rentals yet.'),
-          );
-        }
 
         return Column(
           children: [
@@ -3332,22 +3619,36 @@ class _UserRentalsPageState extends State<UserRentalsPage> {
               ),
             ),
             Expanded(
-              child: ListView.builder(
-                padding: const EdgeInsets.all(16),
-                itemCount: filteredDocs.length,
-                itemBuilder: (context, i) {
-                  final data = filteredDocs[i].data() as Map<String, dynamic>;
-            final name = data['equipmentName'] ?? 'Equipment';
-            final status = (data['status'] ?? 'pending').toString();
-            final color = _statusColor(status);
-            final start = (data['startDate'] as Timestamp).toDate();
-            final end = (data['endDate'] as Timestamp).toDate();
-            final range =
-                '${start.toLocal().toString().split(' ').first} → ${end.toLocal().toString().split(' ').first}';
+              child: filteredDocs.isEmpty
+                  ? Center(
+                      child: Text(_showHistory
+                          ? 'No historical rentals yet.'
+                          : 'No active rentals yet.'),
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: filteredDocs.length,
+                      itemBuilder: (context, i) {
+                        final data = filteredDocs[i].data() as Map<String, dynamic>;
+                        final name = data['equipmentName'] ?? 'Equipment';
+                        final status = (data['status'] ?? 'pending').toString();
+                        final color = _statusColor(status);
+                        final start = (data['startDate'] as Timestamp).toDate();
+                        final end = (data['endDate'] as Timestamp).toDate();
+                        final range =
+                            '${start.toLocal().toString().split(' ').first} → ${end.toLocal().toString().split(' ').first}';
 
-                  return Card(
-                    margin: const EdgeInsets.only(bottom: 12),
-                    child: ListTile(
+                        final isHistoryItem = historyStatuses.contains(status);
+                        final cardColor = isHistoryItem ? Colors.grey.shade200 : Colors.white;
+                        final opacity = isHistoryItem ? 0.6 : 1.0;
+
+                        return AnimatedOpacity(
+                          duration: const Duration(milliseconds: 200),
+                          opacity: opacity,
+                          child: Card(
+                            color: cardColor,
+                            margin: const EdgeInsets.only(bottom: 12),
+                            child: ListTile(
                       leading: const Icon(Icons.event_repeat_rounded),
                       title: Text(name.toString()),
                       subtitle: Column(
@@ -3365,7 +3666,7 @@ class _UserRentalsPageState extends State<UserRentalsPage> {
                                   borderRadius: BorderRadius.circular(999),
                                 ),
                                 child: Text(
-                                  status,
+                                  formatEnumString(status),
                                   style: TextStyle(
                                     color: color,
                                     fontWeight: FontWeight.w500,
@@ -3384,8 +3685,34 @@ class _UserRentalsPageState extends State<UserRentalsPage> {
                           ),
                         ],
                       ),
+                      trailing: status == 'checked_out'
+                          ? Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.edit_calendar_rounded),
+                                  tooltip: 'Update Return Date',
+                                  onPressed: () {
+                                    final start = (data['startDate'] as Timestamp).toDate();
+                                    final end = (data['endDate'] as Timestamp).toDate();
+                                    _updateReturnDate(filteredDocs[i].id, start, end);
+                                  },
+                                ),
+                                const SizedBox(width: 8),
+                                FilledButton(
+                                  onPressed: () => _showReturnDialog(filteredDocs[i].id),
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: Colors.orange,
+                                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                                  ),
+                                  child: const Text('Return'),
+                                ),
+                              ],
+                            )
+                          : null,
                     ),
-                  );
+                  ),
+                );
                 },
               ),
             ),
@@ -3529,10 +3856,10 @@ class _DonationTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final displayName = (data['donorName'] ?? '').toString().isNotEmpty
-      ? data['donorName']
-      : data['itemType']
-        ?? 'Item';
+    final rawName = (data['donorName'] ?? '').toString();
+    final rawType = (data['itemType'] ?? 'Item').toString();
+    final displayName = rawName.isNotEmpty ? rawName : formatEnumString(rawType);
+    
     final status = (data['status'] ?? 'pending').toString();
     final donor = data['donorName'] ?? 'Donor';
     final color = _statusColor(status);
@@ -3613,7 +3940,7 @@ class _DonationTile extends StatelessWidget {
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(
-                      status,
+                      formatEnumString(status),
                       style: TextStyle(
                         color: color,
                         fontWeight: FontWeight.w500,
@@ -3691,11 +4018,7 @@ class _DonationTile extends StatelessWidget {
                         );
 
                         if (!context.mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                              content:
-                                  Text('Donation approved and added')),
-                        );
+                        ToastService.showSuccess(context, 'Success', 'Donation approved and added');
                       },
                       icon:
                           const Icon(Icons.check_circle_rounded),
@@ -3721,10 +4044,7 @@ class _DonationTile extends StatelessWidget {
                         );
 
                         if (!context.mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                              content: Text('Donation rejected')),
-                        );
+                        ToastService.showInfo(context, 'Info', 'Donation rejected');
                       },
                       icon: const Icon(Icons.close_rounded),
                       label: const Text('Reject'),
@@ -3786,19 +4106,9 @@ class _DonationFormPageState extends State<DonationFormPage> {
       photos: imageUrl.isNotEmpty ? [imageUrl] : [],
     );
 
-    await CareCenterRepository.addNotification(
-      userId: 'admin_inbox',
-      type: 'new_donation',
-      title: 'New donation',
-      message:
-          '${_donorNameCtrl.text.trim()} offered $_itemType (x$qty)',
-    );
-
     if (!mounted) return;
     setState(() => _saving = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Donation submitted')),
-    );
+    ToastService.showSuccess(context, 'Success', 'Donation submitted');
     Navigator.pop(context);
   }
 
@@ -4110,4 +4420,12 @@ class UserHistoryPage extends StatelessWidget {
       ),
     );
   }
+}
+
+String formatEnumString(String s) {
+  if (s.isEmpty) return s;
+  return s.split('_').map((word) {
+    if (word.isEmpty) return '';
+    return word[0].toUpperCase() + word.substring(1).toLowerCase();
+  }).join(' ');
 }
