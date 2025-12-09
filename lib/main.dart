@@ -87,7 +87,7 @@ class AuthService {
     required String phone,
     required String nationalId,
     required String preferredContact,
-    required String role, // "admin", "renter"
+    required String role,
   }) async {
     final cred = await _auth.createUserWithEmailAndPassword(
       email: email,
@@ -512,6 +512,97 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
+  Future<void> _resetPassword() async {
+    final emailCtrl = TextEditingController();
+    await showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Reset Password'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Enter your email address to receive a password reset link.'),
+            const SizedBox(height: 16),
+            TextField(
+              controller: emailCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Email',
+                prefixIcon: Icon(Icons.email_rounded),
+              ),
+              keyboardType: TextInputType.emailAddress,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              final email = emailCtrl.text.trim();
+              if (email.isEmpty) {
+                ToastService.showError(dialogContext, 'Error', 'Please enter your email');
+                return;
+              }
+              
+              // 1. Local Validation
+              final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
+              if (!emailRegex.hasMatch(email)) {
+                 ToastService.showError(dialogContext, 'Error', 'Invalid email format');
+                 return;
+              }
+
+              // Don't close dialog yet
+              
+              try {
+                // 2. Check if user exists in Firestore (to bypass Firebase Auth enumeration protection)
+                final userQuery = await CareCenterRepository.usersCol
+                    .where('email', isEqualTo: email)
+                    .limit(1)
+                    .get();
+                    
+                if (userQuery.docs.isEmpty) {
+                   if (dialogContext.mounted) {
+                     ToastService.showError(dialogContext, 'Error', 'No account found with this email.');
+                   }
+                   return;
+                }
+
+                // Close dialog now that we verified user exists
+                if (dialogContext.mounted) {
+                  Navigator.pop(dialogContext);
+                }
+
+                // 3. Send Reset Email
+                await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+                if (mounted) {
+                  ToastService.showSuccess(context, 'Success', 'Password reset email sent to $email');
+                }
+              } on FirebaseAuthException catch (e) {
+                if (mounted) {
+                  // Handle specific error codes
+                  String message = e.message ?? 'Failed to send reset email';
+                  if (e.code == 'user-not-found') {
+                    message = 'No user found with this email address.';
+                  } else if (e.code == 'invalid-email') {
+                    message = 'The email address is badly formatted.';
+                  }
+                  ToastService.showError(context, 'Error', message);
+                }
+              } catch (_) {
+                if (mounted) {
+                  ToastService.showError(context, 'Error', 'Unexpected error');
+                }
+              }
+            },
+            child: const Text('Send Link'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -607,7 +698,7 @@ class _LoginPageState extends State<LoginPage> {
                           Align(
                             alignment: Alignment.centerRight,
                             child: TextButton(
-                              onPressed: () {},
+                              onPressed: _resetPassword,
                               child: const Text('Forgot password?'),
                             ),
                           ),
@@ -2781,7 +2872,12 @@ class _ReservationFormPageState extends State<ReservationFormPage> {
       }
     }
 
-    setState(() => _blockedRanges = ranges);
+    setState(() {
+      _blockedRanges = ranges;
+      // Update start date to first available date
+      _start = _findFirstAvailableDate(DateTime.now());
+      _end = _start.add(Duration(days: _duration));
+    });
   }
 
   bool _isDateBlocked(DateTime date) {
@@ -2948,6 +3044,49 @@ class _ReservationFormPageState extends State<ReservationFormPage> {
                     trailing: TextButton(
                       onPressed: _pickEnd,
                       child: const Text('Change'),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  // Real-time availability feedback
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: _isRangeBlocked(_start, _end) 
+                          ? Colors.red.shade50 
+                          : Colors.green.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: _isRangeBlocked(_start, _end) 
+                            ? Colors.red.shade200 
+                            : Colors.green.shade200,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          _isRangeBlocked(_start, _end) 
+                              ? Icons.error_outline_rounded 
+                              : Icons.check_circle_outline_rounded,
+                          color: _isRangeBlocked(_start, _end) 
+                              ? Colors.red 
+                              : Colors.green,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _isRangeBlocked(_start, _end)
+                                ? 'Selected dates overlap with an existing reservation.'
+                                : 'Dates are available.',
+                            style: TextStyle(
+                              color: _isRangeBlocked(_start, _end) 
+                                  ? Colors.red.shade700 
+                                  : Colors.green.shade700,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   const SizedBox(height: 16),

@@ -91,7 +91,12 @@ class ToastService {
     IconData icon = Icons.info_outline_rounded,
     Duration duration = const Duration(seconds: 4),
   }) {
-    final overlay = Overlay.of(context);
+    // Check if context is valid before proceeding
+    if (!context.mounted) return;
+    
+    final overlay = Overlay.maybeOf(context);
+    if (overlay == null) return;
+
     late OverlayEntry entry;
 
     entry = OverlayEntry(
