@@ -12,7 +12,6 @@ import 'package:image_picker/image_picker.dart';
 import 'firebase_options.dart';
 import 'services/notification_manager.dart';
 import 'ui/custom_toast.dart';
-import 'ui/loading_animation.dart';
 
 /// ------------------------------------------------------------
 /// MAIN
@@ -20,7 +19,9 @@ import 'ui/loading_animation.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
   runApp(const CareCenterApp());
 }
 
@@ -34,64 +35,24 @@ class CareCenterApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
-        colorSchemeSeed: const Color(0xFF27374D), // Darkest Blue
-        scaffoldBackgroundColor: const Color(0xFFDDE6ED), // Lightest Blue/Grey
-        appBarTheme: const AppBarTheme(
-          centerTitle: true,
-          elevation: 0,
-          backgroundColor: Colors.transparent,
-          surfaceTintColor: Colors.transparent,
-          titleTextStyle: TextStyle(
-            color: Color(0xFF27374D),
-            fontSize: 20,
-            fontWeight: FontWeight.w600,
-          ),
-          iconTheme: IconThemeData(color: Color(0xFF27374D)),
-        ),
+        colorSchemeSeed: Colors.teal,
+        scaffoldBackgroundColor: const Color(0xFFF5F5F7),
         cardTheme: CardThemeData(
-          elevation: 0,
-          color: Colors.white,
+          elevation: 2,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-            side: const BorderSide(color: Color(0xFF9DB2BF), width: 0.5),
+            borderRadius: BorderRadius.circular(16),
           ),
         ),
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
           fillColor: Colors.white,
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 20,
-            vertical: 16,
-          ),
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide.none,
           ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(16),
-            borderSide: const BorderSide(color: Color(0xFF9DB2BF)),
-          ),
           focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(16),
-            borderSide: const BorderSide(width: 2, color: Color(0xFF27374D)),
-          ),
-          errorBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(16),
-            borderSide: const BorderSide(color: Colors.redAccent),
-          ),
-        ),
-        filledButtonTheme: FilledButtonThemeData(
-          style: FilledButton.styleFrom(
-            backgroundColor: const Color(0xFF27374D),
-            foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            textStyle: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-            ),
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(width: 1.5),
           ),
         ),
       ),
@@ -157,11 +118,8 @@ class AuthService {
 class StorageService {
   static final _storage = FirebaseStorage.instance;
 
-  static Future<String?> uploadImage(
-    XFile file,
-    String path, {
-    Duration timeout = const Duration(seconds: 25),
-  }) async {
+  static Future<String?> uploadImage(XFile file, String path,
+      {Duration timeout = const Duration(seconds: 25)}) async {
     try {
       final ref = _storage.ref(path);
       Uint8List bytes = await file.readAsBytes();
@@ -171,16 +129,13 @@ class StorageService {
       );
 
       // Wait for task to complete, with timeout to avoid UI hanging on web when CORS blocks
-      await uploadTask.timeout(
-        timeout,
-        onTimeout: () async {
-          try {
-            // Try to cancel if possible
-            await uploadTask.cancel();
-          } catch (_) {}
-          throw Exception('Upload timed out');
-        },
-      );
+      await uploadTask.timeout(timeout, onTimeout: () async {
+        try {
+          // Try to cancel if possible
+          await uploadTask.cancel();
+        } catch (_) {}
+        throw Exception('Upload timed out');
+      });
 
       return await ref.getDownloadURL();
     } catch (e) {
@@ -202,8 +157,7 @@ class CareCenterRepository {
 
   // USERS
   static Future<DocumentSnapshot<Map<String, dynamic>>> getUserProfile(
-    String uid,
-  ) {
+      String uid) {
     return usersCol.doc(uid).get();
   }
 
@@ -232,8 +186,7 @@ class CareCenterRepository {
       'quantityTotal': quantityTotal,
       'quantityAvailable': quantityTotal,
       'location': location,
-      'availabilityStatus':
-          availabilityStatus, // available, rented, donated, maintenance
+      'availabilityStatus': availabilityStatus, // available, rented, donated, maintenance
       'rentalPricePerDay': rentalPricePerDay,
       'tags': tags ?? [],
       'images': images ?? [],
@@ -241,9 +194,7 @@ class CareCenterRepository {
       'donorId': donorId,
       'originalDonationId': originalDonationId,
       'needsMaintenance': availabilityStatus == 'maintenance',
-      'maintenanceUntil': maintenanceUntil != null
-          ? Timestamp.fromDate(maintenanceUntil)
-          : null,
+      'maintenanceUntil': maintenanceUntil != null ? Timestamp.fromDate(maintenanceUntil) : null,
       'lastMaintenanceAt': null,
       'rentalCount': 0,
       'donationCount': 0,
@@ -253,9 +204,7 @@ class CareCenterRepository {
   }
 
   static Future<void> updateEquipment(
-    String equipmentId,
-    Map<String, dynamic> data,
-  ) async {
+      String equipmentId, Map<String, dynamic> data) async {
     await equipmentCol.doc(equipmentId).update(data);
   }
 
@@ -287,8 +236,7 @@ class CareCenterRepository {
       'startDate': Timestamp.fromDate(startDate),
       'endDate': Timestamp.fromDate(endDate),
       'createdAt': FieldValue.serverTimestamp(),
-      'status':
-          'pending', // pending -> approved -> checked_out -> returned -> maintenance / declined
+      'status': 'pending', // pending -> approved -> checked_out -> returned -> maintenance / declined
       'suggestedEndDate': Timestamp.fromDate(endDate),
       'finalEndDate': Timestamp.fromDate(endDate),
       'durationDays': durationDays,
@@ -445,10 +393,10 @@ class CareCenterRepository {
       'reviewedAt': FieldValue.serverTimestamp(),
     };
     if (reviewerAdminId != null) updates['reviewerAdminId'] = reviewerAdminId;
-    if (linkedEquipmentId != null)
-      updates['linkedEquipmentId'] = linkedEquipmentId;
+    if (linkedEquipmentId != null) updates['linkedEquipmentId'] = linkedEquipmentId;
     await donationsCol.doc(donationId).update(updates);
   }
+
 
   // MAINTENANCE
   static Future<String> addMaintenanceRecord({
@@ -466,9 +414,8 @@ class CareCenterRepository {
       'relatedReservationId': relatedReservationId,
       'status': 'open',
       'closedAt': null,
-      'maintenanceUntil': maintenanceUntil != null
-          ? Timestamp.fromDate(maintenanceUntil)
-          : null,
+      'maintenanceUntil':
+          maintenanceUntil != null ? Timestamp.fromDate(maintenanceUntil) : null,
     });
 
     await equipmentCol.doc(equipmentId).update({
@@ -495,40 +442,17 @@ class LoginPage extends StatefulWidget {
   State<LoginPage> createState() => _LoginPageState();
 }
 
-class _LoginPageState extends State<LoginPage>
-    with SingleTickerProviderStateMixin {
+class _LoginPageState extends State<LoginPage> {
   final _formKey = GlobalKey<FormState>();
   final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   bool _obscure = true;
   bool _loading = false;
-  late AnimationController _animController;
-  late Animation<double> _fadeAnimation;
-  late Animation<Offset> _slideAnimation;
-
-  @override
-  void initState() {
-    super.initState();
-    _animController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 800),
-    );
-    _fadeAnimation = CurvedAnimation(
-      parent: _animController,
-      curve: Curves.easeOut,
-    );
-    _slideAnimation = Tween<Offset>(
-      begin: const Offset(0, 0.1),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _animController, curve: Curves.easeOut));
-    _animController.forward();
-  }
 
   @override
   void dispose() {
     _emailCtrl.dispose();
     _passwordCtrl.dispose();
-    _animController.dispose();
     super.dispose();
   }
 
@@ -564,11 +488,7 @@ class _LoginPageState extends State<LoginPage>
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
       setState(() => _loading = false);
-      ToastService.showError(
-        context,
-        'Error',
-        e.message ?? 'Authentication error',
-      );
+      ToastService.showError(context, 'Error', e.message ?? 'Authentication error');
     } catch (_) {
       if (!mounted) return;
       setState(() => _loading = false);
@@ -601,9 +521,7 @@ class _LoginPageState extends State<LoginPage>
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
-              'Enter your email address to receive a password reset link.',
-            ),
+            const Text('Enter your email address to receive a password reset link.'),
             const SizedBox(height: 16),
             TextField(
               controller: emailCtrl,
@@ -624,43 +542,31 @@ class _LoginPageState extends State<LoginPage>
             onPressed: () async {
               final email = emailCtrl.text.trim();
               if (email.isEmpty) {
-                ToastService.showError(
-                  dialogContext,
-                  'Error',
-                  'Please enter your email',
-                );
+                ToastService.showError(dialogContext, 'Error', 'Please enter your email');
                 return;
               }
-
+              
               // 1. Local Validation
               final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
               if (!emailRegex.hasMatch(email)) {
-                ToastService.showError(
-                  dialogContext,
-                  'Error',
-                  'Invalid email format',
-                );
-                return;
+                 ToastService.showError(dialogContext, 'Error', 'Invalid email format');
+                 return;
               }
 
               // Don't close dialog yet
-
+              
               try {
                 // 2. Check if user exists in Firestore (to bypass Firebase Auth enumeration protection)
                 final userQuery = await CareCenterRepository.usersCol
                     .where('email', isEqualTo: email)
                     .limit(1)
                     .get();
-
+                    
                 if (userQuery.docs.isEmpty) {
-                  if (dialogContext.mounted) {
-                    ToastService.showError(
-                      dialogContext,
-                      'Error',
-                      'No account found with this email.',
-                    );
-                  }
-                  return;
+                   if (dialogContext.mounted) {
+                     ToastService.showError(dialogContext, 'Error', 'No account found with this email.');
+                   }
+                   return;
                 }
 
                 // Close dialog now that we verified user exists
@@ -669,15 +575,9 @@ class _LoginPageState extends State<LoginPage>
                 }
 
                 // 3. Send Reset Email
-                await FirebaseAuth.instance.sendPasswordResetEmail(
-                  email: email,
-                );
+                await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
                 if (mounted) {
-                  ToastService.showSuccess(
-                    context,
-                    'Success',
-                    'Password reset email sent to $email',
-                  );
+                  ToastService.showSuccess(context, 'Success', 'Password reset email sent to $email');
                 }
               } on FirebaseAuthException catch (e) {
                 if (mounted) {
@@ -707,195 +607,159 @@ class _LoginPageState extends State<LoginPage>
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
 
-    return LoadingOverlay(
-      isLoading: _loading,
-      message: 'Signing in...',
-      child: Scaffold(
-        body: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-            child: FadeTransition(
-              opacity: _fadeAnimation,
-              child: SlideTransition(
-                position: _slideAnimation,
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 420),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Hero(
-                        tag: 'app_logo',
-                        child: Icon(
-                          Icons.health_and_safety_rounded,
-                          size: 80,
-                          color: cs.primary,
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      Text(
-                        'Care Center',
-                        style: Theme.of(context).textTheme.headlineMedium
-                            ?.copyWith(
-                              fontWeight: FontWeight.bold,
-                              color: cs.primary,
-                            ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Rental • Donation • Exchange',
-                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                          color: Colors.grey[600],
-                        ),
-                      ),
-                      const SizedBox(height: 40),
-                      Card(
-                        elevation: 4,
-                        shadowColor: cs.primary.withOpacity(0.2),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 24,
-                            vertical: 32,
-                          ),
-                          child: Form(
-                            key: _formKey,
-                            child: Column(
-                              children: [
-                                Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: Text(
-                                    'Welcome Back',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .headlineSmall
-                                        ?.copyWith(fontWeight: FontWeight.bold),
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: Text(
-                                    'Please sign in to continue',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodyMedium
-                                        ?.copyWith(color: Colors.grey[600]),
-                                  ),
-                                ),
-                                const SizedBox(height: 24),
-                                TextFormField(
-                                  controller: _emailCtrl,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Email',
-                                    prefixIcon: Icon(Icons.email_outlined),
-                                  ),
-                                  validator: (v) {
-                                    if (v == null || v.trim().isEmpty) {
-                                      return 'Enter email';
-                                    }
-                                    if (!v.contains('@'))
-                                      return 'Invalid email';
-                                    return null;
-                                  },
-                                ),
-                                const SizedBox(height: 16),
-                                TextFormField(
-                                  controller: _passwordCtrl,
-                                  obscureText: _obscure,
-                                  decoration: InputDecoration(
-                                    labelText: 'Password',
-                                    prefixIcon: const Icon(
-                                      Icons.lock_outline_rounded,
-                                    ),
-                                    suffixIcon: IconButton(
-                                      onPressed: () {
-                                        setState(() => _obscure = !_obscure);
-                                      },
-                                      icon: Icon(
-                                        _obscure
-                                            ? Icons.visibility_outlined
-                                            : Icons.visibility_off_outlined,
-                                      ),
-                                    ),
-                                  ),
-                                  validator: (v) {
-                                    if (v == null || v.isEmpty) {
-                                      return 'Enter password';
-                                    }
-                                    if (v.length < 6) {
-                                      return 'Min 6 characters';
-                                    }
-                                    return null;
-                                  },
-                                ),
-                                const SizedBox(height: 8),
-                                Align(
-                                  alignment: Alignment.centerRight,
-                                  child: TextButton(
-                                    onPressed: _resetPassword,
-                                    child: const Text('Forgot password?'),
-                                  ),
-                                ),
-                                const SizedBox(height: 24),
-                                SizedBox(
-                                  width: double.infinity,
-                                  child: FilledButton(
-                                    onPressed: _login,
-                                    child: const Text('Sign in'),
-                                  ),
-                                ),
-                                const SizedBox(height: 24),
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: Divider(color: Colors.grey[200]),
-                                    ),
-                                    Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 16.0,
-                                      ),
-                                      child: Text(
-                                        'or',
-                                        style: TextStyle(
-                                          color: Colors.grey[500],
-                                        ),
-                                      ),
-                                    ),
-                                    Expanded(
-                                      child: Divider(color: Colors.grey[200]),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 24),
-                                SizedBox(
-                                  width: double.infinity,
-                                  child: OutlinedButton(
-                                    onPressed: _guest,
-                                    child: const Text('Continue as guest'),
-                                  ),
-                                ),
-                                const SizedBox(height: 16),
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Text(
-                                      "Don't have an account? ",
-                                      style: TextStyle(color: Colors.grey[600]),
-                                    ),
-                                    TextButton(
-                                      onPressed: _openRegister,
-                                      child: const Text('Create account'),
-                                    ),
-                                  ],
-                                ),
-                              ],
+    return Scaffold(
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.health_and_safety_rounded,
+                    size: 64, color: cs.primary),
+                const SizedBox(height: 16),
+                Text(
+                  'Care Center',
+                  style: Theme.of(context)
+                      .textTheme
+                      .headlineMedium
+                      ?.copyWith(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Rental • Donation • Exchange',
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodyMedium
+                      ?.copyWith(color: Colors.grey[700]),
+                ),
+                const SizedBox(height: 24),
+                Card(
+                  child: Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        children: [
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              'Sign in',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleLarge
+                                  ?.copyWith(fontWeight: FontWeight.w600),
                             ),
                           ),
-                        ),
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: _emailCtrl,
+                            decoration: const InputDecoration(
+                              labelText: 'Email',
+                              prefixIcon: Icon(Icons.email_rounded),
+                            ),
+                            validator: (v) {
+                              if (v == null || v.trim().isEmpty) {
+                                return 'Enter email';
+                              }
+                              if (!v.contains('@')) return 'Invalid email';
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 12),
+                          TextFormField(
+                            controller: _passwordCtrl,
+                            obscureText: _obscure,
+                            decoration: InputDecoration(
+                              labelText: 'Password',
+                              prefixIcon: const Icon(Icons.lock_rounded),
+                              suffixIcon: IconButton(
+                                onPressed: () {
+                                  setState(() => _obscure = !_obscure);
+                                },
+                                icon: Icon(_obscure
+                                    ? Icons.visibility_rounded
+                                    : Icons.visibility_off_rounded),
+                              ),
+                            ),
+                            validator: (v) {
+                              if (v == null || v.isEmpty) {
+                                return 'Enter password';
+                              }
+                              if (v.length < 6) {
+                                return 'Min 6 characters';
+                              }
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 8),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton(
+                              onPressed: _resetPassword,
+                              child: const Text('Forgot password?'),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            child: FilledButton.icon(
+                              onPressed: _loading ? null : _login,
+                              icon: _loading
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Icon(Icons.login_rounded),
+                              label: Text(
+                                  _loading ? 'Signing in...' : 'Sign in'),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                  child:
+                                      Divider(color: Colors.grey[300])),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8.0),
+                                child: Text(
+                                  'or',
+                                  style: TextStyle(color: Colors.grey[600]),
+                                ),
+                              ),
+                              Expanded(
+                                  child:
+                                      Divider(color: Colors.grey[300])),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              onPressed: _guest,
+                              icon: const Icon(Icons.visibility_off_rounded),
+                              label: const Text('Continue as guest'),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          TextButton.icon(
+                            onPressed: _openRegister,
+                            icon: const Icon(Icons.person_add_alt_1_rounded),
+                            label: const Text('Create a new account'),
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
                 ),
-              ),
+              ],
             ),
           ),
         ),
@@ -911,8 +775,7 @@ class RegisterPage extends StatefulWidget {
   State<RegisterPage> createState() => _RegisterPageState();
 }
 
-class _RegisterPageState extends State<RegisterPage>
-    with SingleTickerProviderStateMixin {
+class _RegisterPageState extends State<RegisterPage> {
   final _formKey = GlobalKey<FormState>();
 
   final _nameCtrl = TextEditingController();
@@ -924,27 +787,6 @@ class _RegisterPageState extends State<RegisterPage>
   String _preferredContact = 'phone';
   String _role = 'renter';
   bool _loading = false;
-  late AnimationController _animController;
-  late Animation<double> _fadeAnimation;
-  late Animation<Offset> _slideAnimation;
-
-  @override
-  void initState() {
-    super.initState();
-    _animController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 800),
-    );
-    _fadeAnimation = CurvedAnimation(
-      parent: _animController,
-      curve: Curves.easeOut,
-    );
-    _slideAnimation = Tween<Offset>(
-      begin: const Offset(0, 0.1),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _animController, curve: Curves.easeOut));
-    _animController.forward();
-  }
 
   @override
   void dispose() {
@@ -953,7 +795,6 @@ class _RegisterPageState extends State<RegisterPage>
     _phoneCtrl.dispose();
     _idCtrl.dispose();
     _passwordCtrl.dispose();
-    _animController.dispose();
     super.dispose();
   }
 
@@ -986,11 +827,7 @@ class _RegisterPageState extends State<RegisterPage>
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
       setState(() => _loading = false);
-      ToastService.showError(
-        context,
-        'Error',
-        e.message ?? 'Registration error',
-      );
+      ToastService.showError(context, 'Error', e.message ?? 'Registration error');
     } catch (_) {
       if (!mounted) return;
       setState(() => _loading = false);
@@ -1002,162 +839,143 @@ class _RegisterPageState extends State<RegisterPage>
   Widget build(BuildContext context) {
     final tt = Theme.of(context).textTheme;
 
-    return LoadingOverlay(
-      isLoading: _loading,
-      message: 'Creating account...',
-      child: Scaffold(
-        appBar: AppBar(title: const Text('Create account')),
-        body: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-            child: FadeTransition(
-              opacity: _fadeAnimation,
-              child: SlideTransition(
-                position: _slideAnimation,
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 420),
-                  child: Card(
-                    elevation: 4,
-                    shadowColor: Theme.of(
-                      context,
-                    ).colorScheme.primary.withOpacity(0.2),
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Form(
-                        key: _formKey,
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              'Join Care Center',
-                              style: tt.headlineSmall?.copyWith(
-                                fontWeight: FontWeight.bold,
-                                color: Theme.of(context).colorScheme.primary,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Fill in your details to get started',
-                              style: tt.bodyMedium?.copyWith(
-                                color: Colors.grey[600],
-                              ),
-                            ),
-                            const SizedBox(height: 24),
-                            TextFormField(
-                              controller: _nameCtrl,
-                              decoration: const InputDecoration(
-                                labelText: 'Full name',
-                                prefixIcon: Icon(Icons.person_outline_rounded),
-                              ),
-                              validator: (v) => v == null || v.trim().isEmpty
-                                  ? 'Enter name'
-                                  : null,
-                            ),
-                            const SizedBox(height: 16),
-                            TextFormField(
-                              controller: _emailCtrl,
-                              decoration: const InputDecoration(
-                                labelText: 'Email',
-                                prefixIcon: Icon(Icons.email_outlined),
-                              ),
-                              validator: (v) {
-                                if (v == null || v.trim().isEmpty) {
-                                  return 'Enter email';
-                                }
-                                if (!v.contains('@')) return 'Invalid email';
-                                return null;
-                              },
-                            ),
-                            const SizedBox(height: 16),
-                            TextFormField(
-                              controller: _phoneCtrl,
-                              decoration: const InputDecoration(
-                                labelText: 'Phone',
-                                prefixIcon: Icon(Icons.phone_outlined),
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            TextFormField(
-                              controller: _idCtrl,
-                              decoration: const InputDecoration(
-                                labelText: 'National ID',
-                                prefixIcon: Icon(Icons.badge_outlined),
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            DropdownButtonFormField<String>(
-                              initialValue: _preferredContact,
-                              decoration: const InputDecoration(
-                                labelText: 'Preferred contact',
-                                prefixIcon: Icon(
-                                  Icons.notifications_active_outlined,
-                                ),
-                              ),
-                              items: const [
-                                DropdownMenuItem(
-                                  value: 'phone',
-                                  child: Text('Phone'),
-                                ),
-                                DropdownMenuItem(
-                                  value: 'email',
-                                  child: Text('Email'),
-                                ),
-                                DropdownMenuItem(
-                                  value: 'whatsapp',
-                                  child: Text('WhatsApp'),
-                                ),
-                              ],
-                              onChanged: (v) => setState(
-                                () => _preferredContact = v ?? 'phone',
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            DropdownButtonFormField<String>(
-                              initialValue: _role,
-                              decoration: const InputDecoration(
-                                labelText: 'Role',
-                                prefixIcon: Icon(Icons.security_outlined),
-                              ),
-                              items: const [
-                                DropdownMenuItem(
-                                  value: 'renter',
-                                  child: Text('Renter'),
-                                ),
-                                DropdownMenuItem(
-                                  value: 'admin',
-                                  child: Text('Admin (Donor/Staff)'),
-                                ),
-                              ],
-                              onChanged: (v) =>
-                                  setState(() => _role = v ?? 'renter'),
-                            ),
-                            const SizedBox(height: 16),
-                            TextFormField(
-                              controller: _passwordCtrl,
-                              obscureText: true,
-                              decoration: const InputDecoration(
-                                labelText: 'Password',
-                                prefixIcon: Icon(Icons.lock_outline_rounded),
-                              ),
-                              validator: (v) {
-                                if (v == null || v.isEmpty)
-                                  return 'Enter password';
-                                if (v.length < 6) return 'Min 6 characters';
-                                return null;
-                              },
-                            ),
-                            const SizedBox(height: 32),
-                            SizedBox(
-                              width: double.infinity,
-                              child: FilledButton(
-                                onPressed: _register,
-                                child: const Text('Create account'),
-                              ),
-                            ),
-                          ],
+    return Scaffold(
+      appBar: AppBar(title: const Text('Create account')),
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Card(
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Create a new account',
+                        style:
+                            tt.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: _nameCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Full name',
+                          prefixIcon: Icon(Icons.person_rounded),
+                        ),
+                        validator: (v) =>
+                            v == null || v.trim().isEmpty ? 'Enter name' : null,
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _emailCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Email',
+                          prefixIcon: Icon(Icons.email_rounded),
+                        ),
+                        validator: (v) {
+                          if (v == null || v.trim().isEmpty) {
+                            return 'Enter email';
+                          }
+                          if (!v.contains('@')) return 'Invalid email';
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _phoneCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Phone',
+                          prefixIcon: Icon(Icons.phone_rounded),
                         ),
                       ),
-                    ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _idCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'National ID',
+                          prefixIcon: Icon(Icons.badge_rounded),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        initialValue: _preferredContact,
+                        decoration: const InputDecoration(
+                          labelText: 'Preferred contact',
+                          prefixIcon:
+                              Icon(Icons.notifications_active_rounded),
+                        ),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'phone',
+                            child: Text('Phone'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'email',
+                            child: Text('Email'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'whatsapp',
+                            child: Text('WhatsApp'),
+                          ),
+                        ],
+                        onChanged: (v) =>
+                            setState(() => _preferredContact = v ?? 'phone'),
+                      ),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        initialValue: _role,
+                        decoration: const InputDecoration(
+                          labelText: 'Role',
+                          prefixIcon: Icon(Icons.security_rounded),
+                        ),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'renter',
+                            child: Text('Renter'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'admin',
+                            child: Text('Admin (Donor/Staff)'),
+                          ),
+                        ],
+                        onChanged: (v) => setState(() => _role = v ?? 'renter'),
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _passwordCtrl,
+                        obscureText: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Password',
+                          prefixIcon: Icon(Icons.lock_rounded),
+                        ),
+                        validator: (v) {
+                          if (v == null || v.isEmpty) return 'Enter password';
+                          if (v.length < 6) return 'Min 6 characters';
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 20),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton(
+                          onPressed: _loading ? null : _register,
+                          child: _loading
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Text('Create account'),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -1177,7 +995,11 @@ class MainShell extends StatefulWidget {
   final String role;
   final String? userId;
 
-  const MainShell({super.key, required this.role, required this.userId});
+  const MainShell({
+    super.key,
+    required this.role,
+    required this.userId,
+  });
 
   @override
   State<MainShell> createState() => _MainShellState();
@@ -1202,14 +1024,14 @@ class _MainShellState extends State<MainShell> {
   }
 
   List<Widget> get _pages => [
-    DashboardPage(role: widget.role, userId: widget.userId),
-    InventoryPage(role: widget.role, userId: widget.userId),
-    widget.role == 'admin'
-        ? AdminReservationsPage(adminId: widget.userId ?? '')
-        : UserRentalsPage(userId: widget.userId),
-    DonationsPage(role: widget.role, userId: widget.userId),
-    ProfilePage(role: widget.role, userId: widget.userId),
-  ];
+        DashboardPage(role: widget.role, userId: widget.userId),
+        InventoryPage(role: widget.role, userId: widget.userId),
+        widget.role == 'admin'
+            ? AdminReservationsPage(adminId: widget.userId ?? '')
+            : UserRentalsPage(userId: widget.userId),
+        DonationsPage(role: widget.role, userId: widget.userId),
+        ProfilePage(role: widget.role, userId: widget.userId),
+      ];
 
   String _title() {
     switch (_index) {
@@ -1218,7 +1040,9 @@ class _MainShellState extends State<MainShell> {
       case 1:
         return 'Inventory';
       case 2:
-        return widget.role == 'admin' ? 'Manage Reservations' : 'My Rentals';
+        return widget.role == 'admin'
+            ? 'Manage Reservations'
+            : 'My Rentals';
       case 3:
         return 'Donations';
       case 4:
@@ -1252,69 +1076,43 @@ class _MainShellState extends State<MainShell> {
       ),
       body: SafeArea(
         child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 300),
-          switchInCurve: Curves.easeOut,
-          switchOutCurve: Curves.easeIn,
-          transitionBuilder: (Widget child, Animation<double> animation) {
-            return FadeTransition(
-              opacity: animation,
-              child: SlideTransition(
-                position: Tween<Offset>(
-                  begin: const Offset(0.0, 0.05),
-                  end: Offset.zero,
-                ).animate(animation),
-                child: child,
-              ),
-            );
-          },
-          child: KeyedSubtree(key: ValueKey(_index), child: _pages[_index]),
+          duration: const Duration(milliseconds: 260),
+          child: KeyedSubtree(
+            key: ValueKey(_index),
+            child: _pages[_index],
+          ),
         ),
       ),
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF526D82).withOpacity(0.1),
-              blurRadius: 12,
-              offset: const Offset(0, -4),
-            ),
-          ],
-        ),
-        child: NavigationBar(
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          selectedIndex: _index,
-          onDestinationSelected: (i) => setState(() => _index = i),
-          indicatorColor: const Color(0xFF27374D).withOpacity(0.1),
-          destinations: const [
-            NavigationDestination(
-              icon: Icon(Icons.dashboard_outlined),
-              selectedIcon: Icon(Icons.dashboard_rounded),
-              label: 'Home',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.inventory_2_outlined),
-              selectedIcon: Icon(Icons.inventory_2_rounded),
-              label: 'Inventory',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.event_repeat_outlined),
-              selectedIcon: Icon(Icons.event_repeat_rounded),
-              label: 'Rentals',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.volunteer_activism_outlined),
-              selectedIcon: Icon(Icons.volunteer_activism_rounded),
-              label: 'Donations',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.person_outline_rounded),
-              selectedIcon: Icon(Icons.person_rounded),
-              label: 'Profile',
-            ),
-          ],
-        ),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _index,
+        onDestinationSelected: (i) => setState(() => _index = i),
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.dashboard_outlined),
+            selectedIcon: Icon(Icons.dashboard_rounded),
+            label: 'Home',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.inventory_2_outlined),
+            selectedIcon: Icon(Icons.inventory_2_rounded),
+            label: 'Inventory',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.event_repeat_outlined),
+            selectedIcon: Icon(Icons.event_repeat_rounded),
+            label: 'Rentals',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.volunteer_activism_outlined),
+            selectedIcon: Icon(Icons.volunteer_activism_rounded),
+            label: 'Donations',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.person_outline_rounded),
+            selectedIcon: Icon(Icons.person_rounded),
+            label: 'Profile',
+          ),
+        ],
       ),
     );
   }
@@ -1328,7 +1126,11 @@ class DashboardPage extends StatefulWidget {
   final String role;
   final String? userId;
 
-  const DashboardPage({super.key, required this.role, required this.userId});
+  const DashboardPage({
+    super.key,
+    required this.role,
+    required this.userId,
+  });
 
   @override
   State<DashboardPage> createState() => _DashboardPageState();
@@ -1360,11 +1162,7 @@ class _DashboardPageState extends State<DashboardPage> {
     }
 
     if (overdueCount > 0 && mounted) {
-      ToastService.showWarning(
-        context,
-        'Attention',
-        '$overdueCount rental(s) are overdue!',
-      );
+      ToastService.showWarning(context, 'Attention', '$overdueCount rental(s) are overdue!');
     }
   }
 
@@ -1376,44 +1174,16 @@ class _DashboardPageState extends State<DashboardPage> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        Container(
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFF27374D), Color(0xFF526D82)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(24),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFF27374D).withOpacity(0.3),
-                blurRadius: 16,
-                offset: const Offset(0, 8),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                isAdmin ? 'Welcome back, Admin 👋' : 'Welcome 👋',
-                style: tt.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                isAdmin
-                    ? 'Overview of inventory, rentals and donations.'
-                    : 'Browse equipment and track your rentals.',
-                style: tt.bodyLarge?.copyWith(
-                  color: Colors.white.withOpacity(0.9),
-                ),
-              ),
-            ],
-          ),
+        Text(
+          isAdmin ? 'Welcome back, Admin 👋' : 'Welcome 👋',
+          style: tt.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          isAdmin
+              ? 'Overview of inventory, rentals and donations.'
+              : 'Browse equipment and track your rentals.',
+          style: tt.bodyMedium?.copyWith(color: Colors.grey[700]),
         ),
         const SizedBox(height: 24),
         if (isAdmin) ...[
@@ -1447,59 +1217,48 @@ class _DashboardPageState extends State<DashboardPage> {
       builder: (context, eqSnap) {
         final eqDocs = eqSnap.data?.docs ?? [];
         final total = eqDocs.length;
-        final available = eqDocs
-            .where((d) => d['availabilityStatus'] == 'available')
-            .length;
-        final rented = eqDocs
-            .where((d) => d['availabilityStatus'] == 'rented')
-            .length;
-        final maintenance = eqDocs
-            .where((d) => d['availabilityStatus'] == 'maintenance')
-            .length;
+        final available =
+            eqDocs.where((d) => d['availabilityStatus'] == 'available').length;
+        final rented =
+            eqDocs.where((d) => d['availabilityStatus'] == 'rented').length;
+        final maintenance =
+            eqDocs.where((d) => d['availabilityStatus'] == 'maintenance').length;
 
         return Column(
           children: [
             Row(
               children: [
                 Expanded(
-                  child: _StatCard(
-                    title: 'Total Equipment',
-                    value: '$total',
-                    icon: Icons.inventory_2_rounded,
-                    color: Colors.blue,
-                  ),
-                ),
+                    child: _StatCard(
+                        title: 'Total Equipment',
+                        value: '$total',
+                        icon: Icons.inventory_2_rounded,
+                        color: Colors.blue)),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: _StatCard(
-                    title: 'Available',
-                    value: '$available',
-                    icon: Icons.check_circle_rounded,
-                    color: Colors.green,
-                  ),
-                ),
+                    child: _StatCard(
+                        title: 'Available',
+                        value: '$available',
+                        icon: Icons.check_circle_rounded,
+                        color: Colors.green)),
               ],
             ),
             const SizedBox(height: 12),
             Row(
               children: [
                 Expanded(
-                  child: _StatCard(
-                    title: 'Rented Out',
-                    value: '$rented',
-                    icon: Icons.shopping_bag_rounded,
-                    color: Colors.orange,
-                  ),
-                ),
+                    child: _StatCard(
+                        title: 'Rented Out',
+                        value: '$rented',
+                        icon: Icons.shopping_bag_rounded,
+                        color: Colors.orange)),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: _StatCard(
-                    title: 'Maintenance',
-                    value: '$maintenance',
-                    icon: Icons.build_rounded,
-                    color: Colors.red,
-                  ),
-                ),
+                    child: _StatCard(
+                        title: 'Maintenance',
+                        value: '$maintenance',
+                        icon: Icons.build_rounded,
+                        color: Colors.red)),
               ],
             ),
             const SizedBox(height: 12),
@@ -1510,14 +1269,11 @@ class _DashboardPageState extends State<DashboardPage> {
               builder: (ctx, donSnap) {
                 final pendingDonations = donSnap.data?.docs.length ?? 0;
                 if (pendingDonations == 0) return const SizedBox.shrink();
-                return SizedBox(
-                  width: double.infinity,
-                  child: _StatCard(
-                    title: 'Pending Donations',
-                    value: '$pendingDonations',
-                    icon: Icons.volunteer_activism_rounded,
-                    color: Colors.purple,
-                  ),
+                return _StatCard(
+                  title: 'Pending Donations',
+                  value: '$pendingDonations',
+                  icon: Icons.volunteer_activism_rounded,
+                  color: Colors.purple,
                 );
               },
             ),
@@ -1535,9 +1291,7 @@ class _DashboardPageState extends State<DashboardPage> {
       children: [
         Text(
           'Analytics & Reports',
-          style: Theme.of(
-            context,
-          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 12),
         _buildPopularEquipment(),
@@ -1552,53 +1306,16 @@ class _DashboardPageState extends State<DashboardPage> {
           .limit(5)
           .snapshots(),
       builder: (context, snap) {
-        if (!snap.hasData || snap.data!.docs.isEmpty)
-          return const SizedBox.shrink();
-
-        return Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: const Color(0xFF9DB2BF).withOpacity(0.3)),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFF526D82).withOpacity(0.1),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
+        if (!snap.hasData || snap.data!.docs.isEmpty) return const SizedBox.shrink();
+        
+        return Card(
           child: Padding(
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF27374D).withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Icon(
-                        Icons.trending_up_rounded,
-                        color: Color(0xFF27374D),
-                        size: 20,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    const Text(
-                      'Most Frequently Rented',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF27374D),
-                        fontSize: 16,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
+                const Text('Most Frequently Rented', style: TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
                 ...snap.data!.docs.map((doc) {
                   final data = doc.data() as Map<String, dynamic>;
                   return Padding(
@@ -1607,10 +1324,7 @@ class _DashboardPageState extends State<DashboardPage> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(data['name'] ?? 'Unknown'),
-                        Text(
-                          '${data['rentalCount'] ?? 0} rentals',
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
+                        Text('${data['rentalCount'] ?? 0} rentals', style: const TextStyle(fontWeight: FontWeight.bold)),
                       ],
                     ),
                   );
@@ -1625,72 +1339,35 @@ class _DashboardPageState extends State<DashboardPage> {
 
   Widget _buildInsights(List<QueryDocumentSnapshot> allEquipment) {
     if (allEquipment.isEmpty) return const SizedBox.shrink();
-
+    
     final total = allEquipment.length;
-    final rented = allEquipment
-        .where((d) => d['availabilityStatus'] == 'rented')
-        .length;
-    final maintenance = allEquipment
-        .where((d) => d['availabilityStatus'] == 'maintenance')
-        .length;
-
+    final rented = allEquipment.where((d) => d['availabilityStatus'] == 'rented').length;
+    final maintenance = allEquipment.where((d) => d['availabilityStatus'] == 'maintenance').length;
+    
     final utilRate = (rented / total * 100).toStringAsFixed(1);
     final maintRate = (maintenance / total * 100).toStringAsFixed(1);
-
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [const Color(0xFF9DB2BF).withOpacity(0.3), Colors.white],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFF9DB2BF).withOpacity(0.3)),
-      ),
+    
+    return Card(
+      color: Colors.teal.shade50,
       child: Padding(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF27374D).withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Icon(
-                    Icons.lightbulb_rounded,
-                    color: Color(0xFF27374D),
-                    size: 20,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                const Text(
-                  'Service Insights',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF27374D),
-                    fontSize: 16,
-                  ),
-                ),
+                const Icon(Icons.lightbulb_rounded, color: Colors.teal),
+                const SizedBox(width: 8),
+                Text('Service Insights', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.teal.shade900)),
               ],
             ),
             const SizedBox(height: 8),
-            Text(
-              '• Utilization Rate: $utilRate% of inventory is currently rented.',
-            ),
-            Text(
-              '• Maintenance Health: $maintRate% of items are under repair.',
-            ),
-            if (rented > total * 0.7)
+            Text('• Utilization Rate: $utilRate% of inventory is currently rented.'),
+            Text('• Maintenance Health: $maintRate% of items are under repair.'),
+            if (rented > total * 0.7) 
               const Padding(
                 padding: EdgeInsets.only(top: 4.0),
-                child: Text(
-                  '• High Demand: Consider acquiring more equipment.',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
+                child: Text('• High Demand: Consider acquiring more equipment.', style: TextStyle(fontWeight: FontWeight.bold)),
               ),
           ],
         ),
@@ -1740,8 +1417,8 @@ class _DashboardPageState extends State<DashboardPage> {
                 leading: const Icon(Icons.warning_rounded, color: Colors.red),
                 title: Text(data['equipmentName'] ?? 'Equipment'),
                 subtitle: Text(
-                  'Renter: ${data['renterName']}\nOverdue by $days days',
-                ),
+                    'Renter: ${data['renterName']}\nOverdue by $days days'),
+                trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 16),
               ),
             );
           }).toList(),
@@ -1764,22 +1441,18 @@ class _DashboardPageState extends State<DashboardPage> {
         return Row(
           children: [
             Expanded(
-              child: _StatCard(
-                title: 'Active Rentals',
-                value: '$active',
-                icon: Icons.shopping_bag_rounded,
-                color: Colors.blue,
-              ),
-            ),
+                child: _StatCard(
+                    title: 'Active Rentals',
+                    value: '$active',
+                    icon: Icons.shopping_bag_rounded,
+                    color: Colors.blue)),
             const SizedBox(width: 12),
             Expanded(
-              child: _StatCard(
-                title: 'Pending Requests',
-                value: '$pending',
-                icon: Icons.hourglass_empty_rounded,
-                color: Colors.orange,
-              ),
-            ),
+                child: _StatCard(
+                    title: 'Pending Requests',
+                    value: '$pending',
+                    icon: Icons.hourglass_empty_rounded,
+                    color: Colors.orange)),
           ],
         );
       },
@@ -1795,36 +1468,10 @@ class _DashboardPageState extends State<DashboardPage> {
           .snapshots(),
       builder: (context, snap) {
         if (!snap.hasData || snap.data!.docs.isEmpty) {
-          return Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: const Color(0xFF9DB2BF).withOpacity(0.3),
-              ),
-            ),
-            child: Column(
-              children: [
-                Icon(
-                  Icons.event_busy_rounded,
-                  size: 48,
-                  color: Colors.grey[400],
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'No active rentals',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey[700],
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Your active rentals will appear here',
-                  style: TextStyle(color: Colors.grey[500], fontSize: 13),
-                ),
-              ],
+          return const Card(
+            child: Padding(
+              padding: EdgeInsets.all(16),
+              child: Text('No active rentals at the moment.'),
             ),
           );
         }
@@ -1836,69 +1483,18 @@ class _DashboardPageState extends State<DashboardPage> {
             final isOverdue = end.isBefore(now);
             final daysLeft = end.difference(now).inDays;
 
-            return Container(
-              margin: const EdgeInsets.only(bottom: 12),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: isOverdue
-                      ? [Colors.red.shade50, Colors.white]
-                      : [
-                          const Color(0xFF9DB2BF).withOpacity(0.1),
-                          Colors.white,
-                        ],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: isOverdue
-                      ? Colors.red.withOpacity(0.3)
-                      : const Color(0xFF9DB2BF).withOpacity(0.3),
-                  width: 1,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: (isOverdue ? Colors.red : const Color(0xFF526D82))
-                        .withOpacity(0.1),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
+            return Card(
+              color: isOverdue ? Colors.red.shade50 : null,
+              margin: const EdgeInsets.only(bottom: 8),
               child: ListTile(
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 8,
+                leading: Icon(
+                  isOverdue ? Icons.warning_rounded : Icons.timer_rounded,
+                  color: isOverdue ? Colors.red : Colors.blue,
                 ),
-                leading: Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: (isOverdue ? Colors.red : const Color(0xFF27374D))
-                        .withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(
-                    isOverdue ? Icons.warning_rounded : Icons.timer_rounded,
-                    color: isOverdue ? Colors.red : const Color(0xFF27374D),
-                    size: 24,
-                  ),
-                ),
-                title: Text(
-                  data['equipmentName'] ?? '',
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-                subtitle: Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(
-                    isOverdue
-                        ? 'Overdue by ${now.difference(end).inDays} days'
-                        : '$daysLeft days remaining',
-                    style: TextStyle(
-                      color: isOverdue ? Colors.red : const Color(0xFF526D82),
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
+                title: Text(data['equipmentName'] ?? ''),
+                subtitle: Text(isOverdue
+                    ? 'Overdue by ${now.difference(end).inDays} days'
+                    : '$daysLeft days remaining'),
               ),
             );
           }).toList(),
@@ -1908,110 +1504,53 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 }
 
-class _StatCard extends StatefulWidget {
+class _StatCard extends StatelessWidget {
   final String title;
   final String value;
   final IconData icon;
   final Color color;
+  final VoidCallback? onTap;
 
   const _StatCard({
     required this.title,
     required this.value,
     required this.icon,
     required this.color,
+    this.onTap,
   });
 
   @override
-  State<_StatCard> createState() => _StatCardState();
-}
-
-class _StatCardState extends State<_StatCard>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _scaleAnimation;
-  late Animation<double> _fadeAnimation;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 600),
-    );
-    _scaleAnimation = Tween<double>(
-      begin: 0.8,
-      end: 1.0,
-    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutBack));
-    _fadeAnimation = Tween<double>(
-      begin: 0.0,
-      end: 1.0,
-    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
-    _controller.forward();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return ScaleTransition(
-      scale: _scaleAnimation,
-      child: FadeTransition(
-        opacity: _fadeAnimation,
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                widget.color.withOpacity(0.15),
-                widget.color.withOpacity(0.05),
-              ],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: widget.color.withOpacity(0.3), width: 1),
-            boxShadow: [
-              BoxShadow(
-                color: widget.color.withOpacity(0.1),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
+    return Card(
+      elevation: 0,
+      color: color.withOpacity(0.1),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(icon, color: color, size: 28),
+              const SizedBox(height: 12),
+              Text(
+                value,
+                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: color,
+                    ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                title,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: color.withOpacity(0.8),
+                      fontWeight: FontWeight.w500,
+                    ),
               ),
             ],
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: widget.color.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(widget.icon, color: widget.color, size: 28),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  widget.value,
-                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: widget.color,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  widget.title,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: const Color(0xFF526D82),
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
           ),
         ),
       ),
@@ -2027,7 +1566,11 @@ class InventoryPage extends StatefulWidget {
   final String role;
   final String? userId;
 
-  const InventoryPage({super.key, required this.role, required this.userId});
+  const InventoryPage({
+    super.key,
+    required this.role,
+    required this.userId,
+  });
 
   @override
   State<InventoryPage> createState() => _InventoryPageState();
@@ -2059,25 +1602,16 @@ class _InventoryPageState extends State<InventoryPage> {
                   items: const [
                     DropdownMenuItem(value: 'all', child: Text('All types')),
                     DropdownMenuItem(
-                      value: 'wheelchair',
-                      child: Text('Wheelchair'),
-                    ),
+                        value: 'wheelchair', child: Text('Wheelchair')),
                     DropdownMenuItem(value: 'walker', child: Text('Walker')),
                     DropdownMenuItem(
-                      value: 'crutches',
-                      child: Text('Crutches'),
-                    ),
+                        value: 'crutches', child: Text('Crutches')),
                     DropdownMenuItem(value: 'bed', child: Text('Hospital bed')),
-                    DropdownMenuItem(
-                      value: 'oxygen_machine',
-                      child: Text('Oxygen machine'),
-                    ),
-                    DropdownMenuItem(
-                      value: 'mobility_scooter',
-                      child: Text('Mobility scooter'),
-                    ),
+                    DropdownMenuItem(value: 'oxygen_machine', child: Text('Oxygen machine')),
+                    DropdownMenuItem(value: 'mobility_scooter', child: Text('Mobility scooter')),
                   ],
-                  onChanged: (v) => setDialogState(() => tempType = v ?? 'all'),
+                  onChanged: (v) =>
+                      setDialogState(() => tempType = v ?? 'all'),
                 ),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
@@ -2085,15 +1619,9 @@ class _InventoryPageState extends State<InventoryPage> {
                   decoration: const InputDecoration(labelText: 'Status'),
                   items: const [
                     DropdownMenuItem(value: 'all', child: Text('All')),
-                    DropdownMenuItem(
-                      value: 'available',
-                      child: Text('Available'),
-                    ),
+                    DropdownMenuItem(value: 'available', child: Text('Available')),
                     DropdownMenuItem(value: 'rented', child: Text('Rented')),
-                    DropdownMenuItem(
-                      value: 'maintenance',
-                      child: Text('Maintenance'),
-                    ),
+                    DropdownMenuItem(value: 'maintenance', child: Text('Maintenance')),
                   ],
                   onChanged: (v) =>
                       setDialogState(() => tempStatus = v ?? 'all'),
@@ -2102,7 +1630,8 @@ class _InventoryPageState extends State<InventoryPage> {
                 SwitchListTile(
                   title: const Text('Show donated only'),
                   value: tempDonated,
-                  onChanged: (v) => setDialogState(() => tempDonated = v),
+                  onChanged: (v) =>
+                      setDialogState(() => tempDonated = v),
                 ),
               ],
             ),
@@ -2136,66 +1665,26 @@ class _InventoryPageState extends State<InventoryPage> {
     return Scaffold(
       body: Column(
         children: [
-          Container(
-            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF27374D), Color(0xFF526D82)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFF27374D).withOpacity(0.3),
-                  blurRadius: 12,
-                  offset: const Offset(0, 6),
-                ),
-              ],
-            ),
+          Padding(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             child: Row(
               children: [
                 Expanded(
                   child: TextField(
-                    style: const TextStyle(color: Colors.white),
-                    decoration: InputDecoration(
+                    decoration: const InputDecoration(
                       hintText: 'Search equipment...',
-                      hintStyle: TextStyle(
-                        color: Colors.white.withOpacity(0.7),
-                      ),
-                      prefixIcon: const Icon(
-                        Icons.search_rounded,
-                        color: Colors.white,
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide.none,
-                      ),
-                      fillColor: Colors.white.withOpacity(0.15),
-                      filled: true,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 12,
-                      ),
+                      prefixIcon: Icon(Icons.search_rounded),
                     ),
-                    onChanged: (v) => setState(() => _search = v.toLowerCase()),
+                    onChanged: (v) =>
+                        setState(() => _search = v.toLowerCase()),
                   ),
                 ),
                 const SizedBox(width: 12),
-                Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: IconButton(
-                    onPressed: _openFilters,
-                    icon: const Icon(
-                      Icons.filter_list_rounded,
-                      color: Colors.white,
-                    ),
-                    tooltip: 'Filter',
-                  ),
+                IconButton.outlined(
+                  onPressed: _openFilters,
+                  icon: const Icon(Icons.filter_list_rounded),
+                  tooltip: 'Filter',
                 ),
               ],
             ),
@@ -2208,7 +1697,7 @@ class _InventoryPageState extends State<InventoryPage> {
                   return Center(child: Text('Error: ${snap.error}'));
                 }
                 if (snap.connectionState == ConnectionState.waiting) {
-                  return const Center(child: LoadingAnimation());
+                  return const Center(child: CircularProgressIndicator());
                 }
                 if (!snap.hasData || snap.data!.docs.isEmpty) {
                   return const Center(child: Text('No equipment found.'));
@@ -2217,11 +1706,13 @@ class _InventoryPageState extends State<InventoryPage> {
                 final now = DateTime.now();
                 var docs = snap.data!.docs.where((d) {
                   final data = d.data() as Map<String, dynamic>;
-                  final name = (data['name'] ?? '').toString().toLowerCase();
+                  final name =
+                      (data['name'] ?? '').toString().toLowerCase();
                   final type = (data['type'] ?? '').toString();
-                  var status = (data['availabilityStatus'] ?? 'available')
-                      .toString();
-                  final isDonated = (data['isDonatedItem'] ?? false) as bool;
+                  var status =
+                      (data['availabilityStatus'] ?? 'available').toString();
+                  final isDonated =
+                      (data['isDonatedItem'] ?? false) as bool;
                   final maintTs = data['maintenanceUntil'];
 
                   // auto release maintenance if time passed
@@ -2240,8 +1731,7 @@ class _InventoryPageState extends State<InventoryPage> {
                     // Fire-and-forget operations (keep UI responsive)
                     (() async {
                       try {
-                        final resSnap = await CareCenterRepository
-                            .reservationsCol
+                        final resSnap = await CareCenterRepository.reservationsCol
                             .where('equipmentId', isEqualTo: d.id)
                             .where('status', isEqualTo: 'maintenance')
                             .get();
@@ -2253,29 +1743,22 @@ class _InventoryPageState extends State<InventoryPage> {
                               closedAt: DateTime.now(),
                             );
                           } catch (e) {
-                            debugPrint(
-                              'Failed to delete reservation ${r.id}: $e',
-                            );
+                            debugPrint('Failed to delete reservation ${r.id}: $e');
                           }
                         }
 
-                        final maintSnap = await CareCenterRepository
-                            .maintenanceCol
+                        final maintSnap = await CareCenterRepository.maintenanceCol
                             .where('equipmentId', isEqualTo: d.id)
                             .where('status', isEqualTo: 'open')
                             .get();
                         for (final m in maintSnap.docs) {
                           try {
-                            await CareCenterRepository.maintenanceCol
-                                .doc(m.id)
-                                .update({
-                                  'status': 'closed',
-                                  'closedAt': FieldValue.serverTimestamp(),
-                                });
+                            await CareCenterRepository.maintenanceCol.doc(m.id).update({
+                              'status': 'closed',
+                              'closedAt': FieldValue.serverTimestamp(),
+                            });
                           } catch (e) {
-                            debugPrint(
-                              'Failed to close maintenance record ${m.id}: $e',
-                            );
+                            debugPrint('Failed to close maintenance record ${m.id}: $e');
                           }
                         }
                       } catch (e) {
@@ -2327,57 +1810,15 @@ class _InventoryPageState extends State<InventoryPage> {
         ],
       ),
       floatingActionButton: isAdmin
-          ? Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(16),
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF27374D), Color(0xFF526D82)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF27374D).withOpacity(0.4),
-                    blurRadius: 12,
-                    offset: const Offset(0, 6),
-                  ),
-                ],
-              ),
-              child: Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(16),
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const AddEquipmentPage(),
-                      ),
-                    );
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 14,
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.add_rounded, color: Colors.white),
-                        SizedBox(width: 8),
-                        Text(
-                          'Add equipment',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 16,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
+          ? FloatingActionButton.extended(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const AddEquipmentPage()),
+                );
+              },
+              icon: const Icon(Icons.add_rounded),
+              label: const Text('Add equipment'),
             )
           : null,
     );
@@ -2496,9 +1937,7 @@ class _EquipmentCardState extends State<EquipmentCard> {
                       'closedAt': FieldValue.serverTimestamp(),
                     });
                   } catch (e) {
-                    debugPrint(
-                      'Failed to close maintenance record ${m.id}: $e',
-                    );
+                    debugPrint('Failed to close maintenance record ${m.id}: $e');
                   }
                 }
               } catch (e) {
@@ -2514,8 +1953,7 @@ class _EquipmentCardState extends State<EquipmentCard> {
           if (d > 0) {
             _timeRemaining = '$d day${d > 1 ? 's' : ''} left';
           } else {
-            _timeRemaining =
-                '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+            _timeRemaining = '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
           }
         }
       } else {
@@ -2545,79 +1983,50 @@ class _EquipmentCardState extends State<EquipmentCard> {
     final imageUrl = images.isNotEmpty ? images.first : null;
     final statusColor = widget._statusColor(status, context);
     final isAdmin = role == 'admin';
+    final canReserve = !isAdmin && status == 'available';
     final isDonated = (data['isDonatedItem'] ?? false) as bool;
     final donorId = (data['donorId'] ?? '').toString();
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFF9DB2BF).withOpacity(0.3)),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF526D82).withOpacity(0.08),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(12),
         child: Column(
           children: [
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(16),
-                    gradient: LinearGradient(
-                      colors: [
-                        const Color(0xFF9DB2BF).withOpacity(0.2),
-                        const Color(0xFF9DB2BF).withOpacity(0.05),
-                      ],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    border: Border.all(
-                      color: const Color(0xFF9DB2BF).withOpacity(0.3),
-                    ),
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
-                    child: Container(
-                      width: 90,
-                      height: 90,
-                      color: Colors.transparent,
-                      child: imageUrl != null
-                          ? Image.network(
-                              imageUrl,
-                              fit: BoxFit.cover,
-                              loadingBuilder: (context, child, progress) {
-                                if (progress == null) return child;
-                                return const Center(
-                                  child: SizedBox(
-                                    width: 24,
-                                    height: 24,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  ),
-                                );
-                              },
-                              errorBuilder: (context, err, stack) => Icon(
-                                widget._typeIcon(type.toString()),
-                                size: 40,
-                                color: Colors.grey[700],
-                              ),
-                            )
-                          : Icon(
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    width: 86,
+                    height: 86,
+                    color: Colors.grey[200],
+                    child: imageUrl != null
+                        ? Image.network(
+                            imageUrl,
+                            fit: BoxFit.cover,
+                            loadingBuilder: (context, child, progress) {
+                              if (progress == null) return child;
+                              return const Center(
+                                child: SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                ),
+                              );
+                            },
+                            errorBuilder: (context, err, stack) => Icon(
                               widget._typeIcon(type.toString()),
                               size: 40,
                               color: Colors.grey[700],
                             ),
-                    ),
+                          )
+                        : Icon(
+                            widget._typeIcon(type.toString()),
+                            size: 40,
+                            color: Colors.grey[700],
+                          ),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -2634,46 +2043,27 @@ class _EquipmentCardState extends State<EquipmentCard> {
                               children: [
                                 Text(
                                   name.toString(),
-                                  style: Theme.of(context).textTheme.titleMedium
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .titleMedium
                                       ?.copyWith(fontWeight: FontWeight.w700),
                                 ),
                                 const SizedBox(height: 4),
-                                Text(
-                                  'Type: ${formatEnumString(type.toString())} • Condition: ${data['condition'] ?? 'n/a'}',
-                                ),
-                                if ((data['location'] ?? '')
-                                    .toString()
-                                    .isNotEmpty)
+                                Text('Type: ${formatEnumString(type.toString())} • Condition: ${data['condition'] ?? 'n/a'}'),
+                                if ((data['location'] ?? '').toString().isNotEmpty)
                                   Text('Location: ${data['location']}'),
                               ],
                             ),
                           ),
                           Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 6,
-                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [
-                                  statusColor.withOpacity(0.15),
-                                  statusColor.withOpacity(0.05),
-                                ],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                              ),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: statusColor.withOpacity(0.3),
-                              ),
+                              color: statusColor.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(999),
                             ),
                             child: Text(
                               formatEnumString(status),
-                              style: TextStyle(
-                                color: statusColor,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 12,
-                              ),
+                              style: TextStyle(color: statusColor, fontWeight: FontWeight.w600),
                             ),
                           ),
                         ],
@@ -2684,26 +2074,15 @@ class _EquipmentCardState extends State<EquipmentCard> {
                         runSpacing: 6,
                         children: [
                           Chip(
-                            avatar: const Icon(
-                              Icons.inventory_2_outlined,
-                              size: 18,
-                            ),
-                            label: Text(
-                              'Qty: ${data['quantityAvailable'] ?? data['quantityTotal'] ?? '-'}',
-                            ),
+                            avatar: const Icon(Icons.inventory_2_outlined, size: 18),
+                            label: Text('Qty: ${data['quantityAvailable'] ?? data['quantityTotal'] ?? '-'}'),
                           ),
                           if (data['rentalPricePerDay'] != null)
                             Chip(
-                              avatar: const Icon(
-                                Icons.attach_money_rounded,
-                                size: 18,
-                              ),
-                              label: Text(
-                                'Price/day: ${data['rentalPricePerDay']}',
-                              ),
+                              avatar: const Icon(Icons.attach_money_rounded, size: 18),
+                              label: Text('Price/day: ${data['rentalPricePerDay']}'),
                             ),
-                          if (status == 'maintenance' &&
-                              _timeRemaining.isNotEmpty)
+                          if (status == 'maintenance' && _timeRemaining.isNotEmpty)
                             Chip(
                               avatar: const Icon(Icons.build_rounded, size: 18),
                               label: Text('Maintenance: $_timeRemaining'),
@@ -2722,60 +2101,40 @@ class _EquipmentCardState extends State<EquipmentCard> {
                           final docs = snap.data!.docs.where((d) {
                             final rd = d.data() as Map<String, dynamic>;
                             final st = (rd['status'] ?? '').toString();
-                            if (st != 'approved' && st != 'checked_out')
-                              return false;
+                            if (st != 'approved' && st != 'checked_out') return false;
                             final end = (rd['endDate'] as Timestamp).toDate();
                             return end.isAfter(now);
                           }).toList();
                           if (docs.isEmpty) {
                             return Text(
                               'Not rented currently',
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(color: Colors.grey[600]),
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[600]),
                             );
                           }
                           docs.sort((a, b) {
-                            final ea =
-                                (a.data() as Map<String, dynamic>)['endDate']
-                                    as Timestamp;
-                            final eb =
-                                (b.data() as Map<String, dynamic>)['endDate']
-                                    as Timestamp;
+                            final ea = (a.data() as Map<String, dynamic>)['endDate'] as Timestamp;
+                            final eb = (b.data() as Map<String, dynamic>)['endDate'] as Timestamp;
                             return ea.toDate().compareTo(eb.toDate());
                           });
-
+                          
                           // Find the first 'checked_out' reservation to show remaining time
-                          final checkedOutDocs = docs.where(
-                            (d) =>
-                                (d.data() as Map<String, dynamic>)['status'] ==
-                                'checked_out',
-                          );
-                          final activeRental = checkedOutDocs.isNotEmpty
-                              ? checkedOutDocs.first
-                              : docs.first;
-
-                          final rd =
-                              activeRental.data() as Map<String, dynamic>;
+                          final checkedOutDocs = docs.where((d) => (d.data() as Map<String, dynamic>)['status'] == 'checked_out');
+                          final activeRental = checkedOutDocs.isNotEmpty ? checkedOutDocs.first : docs.first;
+                          
+                          final rd = activeRental.data() as Map<String, dynamic>;
                           final st = (rd['status'] ?? '').toString();
-
+                          
                           if (st == 'approved') {
-                            return Text(
+                             return Text(
                               'Reserved (Not picked up)',
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(color: Colors.blue[700]),
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.blue[700]),
                             );
                           }
 
                           final soonEnd = (rd['endDate'] as Timestamp);
                           final days = soonEnd.toDate().difference(now).inDays;
-                          final text = days >= 0
-                              ? 'Remaining: $days day(s)'
-                              : 'Overdue';
-                          return Text(
-                            text,
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(color: Colors.grey[700]),
-                          );
+                          final text = days >= 0 ? 'Remaining: $days day(s)' : 'Overdue';
+                          return Text(text, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[700]));
                         },
                       ),
                       const SizedBox(height: 6),
@@ -2786,38 +2145,21 @@ class _EquipmentCardState extends State<EquipmentCard> {
                             Row(
                               mainAxisSize: MainAxisSize.min,
                               children: const [
-                                Icon(
-                                  Icons.volunteer_activism_rounded,
-                                  size: 18,
-                                  color: Colors.purple,
-                                ),
+                                Icon(Icons.volunteer_activism_rounded, size: 18, color: Colors.purple),
                                 SizedBox(width: 6),
-                                Text(
-                                  'Donated item',
-                                  style: TextStyle(fontWeight: FontWeight.w600),
-                                ),
+                                Text('Donated item', style: TextStyle(fontWeight: FontWeight.w600)),
                               ],
                             ),
                             if (donorId.isNotEmpty)
-                              FutureBuilder<
-                                DocumentSnapshot<Map<String, dynamic>>
-                              >(
-                                future: CareCenterRepository.usersCol
-                                    .doc(donorId)
-                                    .get(),
+                              FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                                future: CareCenterRepository.usersCol.doc(donorId).get(),
                                 builder: (context, snap) {
-                                  if (!snap.hasData)
-                                    return const SizedBox.shrink();
+                                  if (!snap.hasData) return const SizedBox.shrink();
                                   final user = snap.data!.data() ?? {};
                                   final dn = user['name'] ?? '';
                                   return Padding(
                                     padding: const EdgeInsets.only(top: 2.0),
-                                    child: Text(
-                                      'Donated by: $dn',
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.bodySmall,
-                                    ),
+                                    child: Text('Donated by: $dn', style: Theme.of(context).textTheme.bodySmall),
                                   );
                                 },
                               ),
@@ -2828,10 +2170,9 @@ class _EquipmentCardState extends State<EquipmentCard> {
                         Wrap(
                           spacing: 8,
                           runSpacing: 6,
-                          children:
-                              ((data['tags'] as List?)?.cast<String>() ?? [])
-                                  .map((t) => Chip(label: Text(t)))
-                                  .toList(),
+                          children: ((data['tags'] as List?)?.cast<String>() ?? [])
+                              .map((t) => Chip(label: Text(t)))
+                              .toList(),
                         ),
                       if (images.length > 1) ...[
                         const SizedBox(height: 8),
@@ -2846,12 +2187,7 @@ class _EquipmentCardState extends State<EquipmentCard> {
                                 padding: const EdgeInsets.only(right: 8.0),
                                 child: ClipRRect(
                                   borderRadius: BorderRadius.circular(8),
-                                  child: Image.network(
-                                    img,
-                                    width: 56,
-                                    height: 56,
-                                    fit: BoxFit.cover,
-                                  ),
+                                  child: Image.network(img, width: 56, height: 56, fit: BoxFit.cover),
                                 ),
                               );
                             },
@@ -2868,7 +2204,7 @@ class _EquipmentCardState extends State<EquipmentCard> {
               Row(
                 children: [
                   Expanded(
-                    child: FilledButton(
+                    child: FilledButton.icon(
                       onPressed: () {
                         Navigator.push(
                           context,
@@ -2883,39 +2219,23 @@ class _EquipmentCardState extends State<EquipmentCard> {
                       style: FilledButton.styleFrom(
                         backgroundColor: Colors.blue.shade500,
                       ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.edit_rounded),
-                          SizedBox(width: 4),
-                          Text('Edit'),
-                        ],
-                      ),
+                      icon: const Icon(Icons.edit_rounded),
+                      label: const Text('Edit'),
                     ),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: FilledButton(
+                    child: FilledButton.icon(
                       onPressed: () async {
                         await CareCenterRepository.deleteEquipment(docId);
                         if (!mounted) return;
-                        ToastService.showSuccess(
-                          context,
-                          'Success',
-                          'Equipment deleted',
-                        );
+                        ToastService.showSuccess(context, 'Success', 'Equipment deleted');
                       },
                       style: FilledButton.styleFrom(
                         backgroundColor: Colors.red.shade400,
                       ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.delete_outline_rounded),
-                          SizedBox(width: 4),
-                          Text('Delete'),
-                        ],
-                      ),
+                      icon: const Icon(Icons.delete_outline_rounded),
+                      label: const Text('Delete'),
                     ),
                   ),
                 ],
@@ -2923,15 +2243,11 @@ class _EquipmentCardState extends State<EquipmentCard> {
             else
               Align(
                 alignment: Alignment.centerRight,
-                child: FilledButton(
+                child: FilledButton.icon(
                   onPressed: !isAdmin
                       ? () {
                           if (userId == null) {
-                            ToastService.showInfo(
-                              context,
-                              'Info',
-                              'Sign in to reserve equipment.',
-                            );
+                            ToastService.showInfo(context, 'Info', 'Sign in to reserve equipment.');
                             return;
                           }
                           Navigator.push(
@@ -2947,14 +2263,8 @@ class _EquipmentCardState extends State<EquipmentCard> {
                           );
                         }
                       : null,
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.event_available_rounded),
-                      SizedBox(width: 4),
-                      Text('Reserve'),
-                    ],
-                  ),
+                  icon: const Icon(Icons.event_available_rounded),
+                  label: const Text('Reserve'),
                 ),
               ),
           ],
@@ -3018,9 +2328,7 @@ class _AddEquipmentPageState extends State<AddEquipmentPage> {
       images: imageUrl.isNotEmpty ? [imageUrl] : [],
       isDonatedItem: false,
       availabilityStatus: _availability,
-      maintenanceUntil: _availability == 'maintenance'
-          ? _maintenanceUntil
-          : null,
+      maintenanceUntil: _availability == 'maintenance' ? _maintenanceUntil : null,
     );
 
     if (!mounted) return;
@@ -3070,29 +2378,16 @@ class _AddEquipmentPageState extends State<AddEquipmentPage> {
                       ),
                       items: const [
                         DropdownMenuItem(
-                          value: 'wheelchair',
-                          child: Text('Wheelchair'),
-                        ),
+                            value: 'wheelchair', child: Text('Wheelchair')),
                         DropdownMenuItem(
-                          value: 'walker',
-                          child: Text('Walker'),
-                        ),
+                            value: 'walker', child: Text('Walker')),
                         DropdownMenuItem(
-                          value: 'crutches',
-                          child: Text('Crutches'),
-                        ),
+                            value: 'crutches', child: Text('Crutches')),
                         DropdownMenuItem(value: 'bed', child: Text('Bed')),
-                        DropdownMenuItem(
-                          value: 'oxygen_machine',
-                          child: Text('Oxygen machine'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'mobility_scooter',
-                          child: Text('Mobility scooter'),
-                        ),
+                        DropdownMenuItem(value: 'oxygen_machine', child: Text('Oxygen machine')),
+                        DropdownMenuItem(value: 'mobility_scooter', child: Text('Mobility scooter')),
                       ],
-                      onChanged: (v) =>
-                          setState(() => _type = v ?? 'wheelchair'),
+                      onChanged: (v) => setState(() => _type = v ?? 'wheelchair'),
                     ),
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
@@ -3106,9 +2401,8 @@ class _AddEquipmentPageState extends State<AddEquipmentPage> {
                         DropdownMenuItem(value: 'good', child: Text('Good')),
                         DropdownMenuItem(value: 'fair', child: Text('Fair')),
                         DropdownMenuItem(
-                          value: 'needs_repair',
-                          child: Text('Needs repair'),
-                        ),
+                            value: 'needs_repair',
+                            child: Text('Needs repair')),
                       ],
                       onChanged: (v) =>
                           setState(() => _condition = v ?? 'good'),
@@ -3121,40 +2415,26 @@ class _AddEquipmentPageState extends State<AddEquipmentPage> {
                         prefixIcon: Icon(Icons.info_outline_rounded),
                       ),
                       items: const [
-                        DropdownMenuItem(
-                          value: 'available',
-                          child: Text('Available'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'rented',
-                          child: Text('Rented'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'maintenance',
-                          child: Text('Maintenance'),
-                        ),
+                        DropdownMenuItem(value: 'available', child: Text('Available')),
+                        DropdownMenuItem(value: 'rented', child: Text('Rented')),
+                        DropdownMenuItem(value: 'maintenance', child: Text('Maintenance')),
                       ],
-                      onChanged: (v) =>
-                          setState(() => _availability = v ?? 'available'),
+                      onChanged: (v) => setState(() => _availability = v ?? 'available'),
                     ),
                     if (_availability == 'maintenance') ...[
                       const SizedBox(height: 12),
                       ListTile(
                         leading: const Icon(Icons.build_circle_rounded),
-                        title: Text(
-                          _maintenanceUntil == null
-                              ? 'Maintenance until not set'
-                              : 'Until: ${_maintenanceUntil!.toLocal().toString().split(' ').first}',
-                        ),
+                        title: Text(_maintenanceUntil == null
+                            ? 'Maintenance until not set'
+                            : 'Until: ${_maintenanceUntil!.toLocal().toString().split(' ').first}'),
                         trailing: TextButton(
                           onPressed: () async {
                             final picked = await showDatePicker(
                               context: context,
                               initialDate: DateTime.now(),
                               firstDate: DateTime.now(),
-                              lastDate: DateTime.now().add(
-                                const Duration(days: 365),
-                              ),
+                              lastDate: DateTime.now().add(const Duration(days: 365)),
                             );
                             if (picked != null) {
                               setState(() => _maintenanceUntil = picked);
@@ -3262,20 +2542,16 @@ class _EditEquipmentPageState extends State<EditEquipmentPage> {
     _nameCtrl = TextEditingController(text: d['name'] ?? '');
     _descCtrl = TextEditingController(text: d['description'] ?? '');
     _locCtrl = TextEditingController(text: d['location'] ?? '');
-    _qtyCtrl = TextEditingController(
-      text: (d['quantityTotal'] ?? 1).toString(),
-    );
-    _priceCtrl = TextEditingController(
-      text: (d['rentalPricePerDay'] ?? '').toString(),
-    );
+    _qtyCtrl =
+        TextEditingController(text: (d['quantityTotal'] ?? 1).toString());
+    _priceCtrl =
+        TextEditingController(text: (d['rentalPricePerDay'] ?? '').toString());
     final images = (d['images'] as List?)?.cast<String>() ?? [];
-    _imageCtrl = TextEditingController(
-      text: images.isNotEmpty ? images.first : '',
-    );
+    _imageCtrl = TextEditingController(text: images.isNotEmpty ? images.first : '');
     _status = (d['availabilityStatus'] ?? 'available').toString();
-    if (d['maintenanceUntil'] is Timestamp) {
-      _maintenanceUntil = (d['maintenanceUntil'] as Timestamp).toDate();
-    }
+        if (d['maintenanceUntil'] is Timestamp) {
+          _maintenanceUntil = (d['maintenanceUntil'] as Timestamp).toDate();
+        }
     _type = (d['type'] ?? 'wheelchair').toString();
     _condition = (d['condition'] ?? 'good').toString();
     final tags = (d['tags'] as List?)?.map((e) => e.toString()).toList() ?? [];
@@ -3320,11 +2596,7 @@ class _EditEquipmentPageState extends State<EditEquipmentPage> {
     if (_status == 'maintenance') {
       if (_maintenanceUntil == null) {
         if (mounted) {
-          ToastService.showWarning(
-            context,
-            'Warning',
-            'Select maintenance date & time',
-          );
+          ToastService.showWarning(context, 'Warning', 'Select maintenance date & time');
         }
         return;
       }
@@ -3378,23 +2650,14 @@ class _EditEquipmentPageState extends State<EditEquipmentPage> {
                     ),
                     items: const [
                       DropdownMenuItem(
-                        value: 'wheelchair',
-                        child: Text('Wheelchair'),
-                      ),
-                      DropdownMenuItem(value: 'walker', child: Text('Walker')),
+                          value: 'wheelchair', child: Text('Wheelchair')),
                       DropdownMenuItem(
-                        value: 'crutches',
-                        child: Text('Crutches'),
-                      ),
+                          value: 'walker', child: Text('Walker')),
+                      DropdownMenuItem(
+                          value: 'crutches', child: Text('Crutches')),
                       DropdownMenuItem(value: 'bed', child: Text('Bed')),
-                      DropdownMenuItem(
-                        value: 'oxygen_machine',
-                        child: Text('Oxygen machine'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'mobility_scooter',
-                        child: Text('Mobility scooter'),
-                      ),
+                      DropdownMenuItem(value: 'oxygen_machine', child: Text('Oxygen machine')),
+                      DropdownMenuItem(value: 'mobility_scooter', child: Text('Mobility scooter')),
                     ],
                     onChanged: (v) => setState(() => _type = v ?? 'wheelchair'),
                   ),
@@ -3410,11 +2673,11 @@ class _EditEquipmentPageState extends State<EditEquipmentPage> {
                       DropdownMenuItem(value: 'good', child: Text('Good')),
                       DropdownMenuItem(value: 'fair', child: Text('Fair')),
                       DropdownMenuItem(
-                        value: 'needs_repair',
-                        child: Text('Needs repair'),
-                      ),
+                          value: 'needs_repair',
+                          child: Text('Needs repair')),
                     ],
-                    onChanged: (v) => setState(() => _condition = v ?? 'good'),
+                    onChanged: (v) =>
+                        setState(() => _condition = v ?? 'good'),
                   ),
                   const SizedBox(height: 12),
                   TextFormField(
@@ -3468,18 +2731,12 @@ class _EditEquipmentPageState extends State<EditEquipmentPage> {
                     ),
                     items: const [
                       DropdownMenuItem(
-                        value: 'available',
-                        child: Text('Available'),
-                      ),
+                          value: 'available', child: Text('Available')),
                       DropdownMenuItem(value: 'rented', child: Text('Rented')),
                       DropdownMenuItem(
-                        value: 'donated',
-                        child: Text('Donated'),
-                      ),
+                          value: 'donated', child: Text('Donated')),
                       DropdownMenuItem(
-                        value: 'maintenance',
-                        child: Text('Maintenance'),
-                      ),
+                          value: 'maintenance', child: Text('Maintenance')),
                     ],
                     onChanged: (v) =>
                         setState(() => _status = v ?? 'available'),
@@ -3488,11 +2745,9 @@ class _EditEquipmentPageState extends State<EditEquipmentPage> {
                     const SizedBox(height: 12),
                     ListTile(
                       leading: const Icon(Icons.build_circle_rounded),
-                      title: Text(
-                        _maintenanceUntil == null
-                            ? 'Maintenance until not set'
-                            : 'Until: ${_maintenanceUntil!.toLocal()}',
-                      ),
+                      title: Text(_maintenanceUntil == null
+                          ? 'Maintenance until not set'
+                          : 'Until: ${_maintenanceUntil!.toLocal()}'),
                       subtitle: const Text('Select both date and time'),
                       trailing: TextButton(
                         onPressed: () async {
@@ -3500,16 +2755,12 @@ class _EditEquipmentPageState extends State<EditEquipmentPage> {
                             context: context,
                             initialDate: _maintenanceUntil ?? DateTime.now(),
                             firstDate: DateTime.now(),
-                            lastDate: DateTime.now().add(
-                              const Duration(days: 365),
-                            ),
+                            lastDate: DateTime.now().add(const Duration(days: 365)),
                           );
                           if (pickedDate == null) return;
                           final pickedTime = await showTimePicker(
                             context: context,
-                            initialTime: TimeOfDay.fromDateTime(
-                              _maintenanceUntil ?? DateTime.now(),
-                            ),
+                            initialTime: TimeOfDay.fromDateTime(_maintenanceUntil ?? DateTime.now()),
                           );
                           if (pickedTime == null) return;
                           setState(() {
@@ -3592,9 +2843,7 @@ class _ReservationFormPageState extends State<ReservationFormPage> {
       final data = doc.data();
       final status = (data['status'] ?? '').toString();
       // Block dates for approved, checked_out, or return_requested
-      if (status == 'approved' ||
-          status == 'checked_out' ||
-          status == 'return_requested') {
+      if (status == 'approved' || status == 'checked_out' || status == 'return_requested') {
         final s = (data['startDate'] as Timestamp).toDate();
         final e = (data['endDate'] as Timestamp).toDate();
         if (e.isAfter(now)) {
@@ -3604,9 +2853,7 @@ class _ReservationFormPageState extends State<ReservationFormPage> {
     }
 
     // 2. Fetch equipment status for maintenance
-    final eqDoc = await CareCenterRepository.equipmentCol
-        .doc(widget.equipmentId)
-        .get();
+    final eqDoc = await CareCenterRepository.equipmentCol.doc(widget.equipmentId).get();
     if (eqDoc.exists) {
       final data = eqDoc.data() as Map<String, dynamic>;
       final status = data['availabilityStatus'];
@@ -3616,7 +2863,10 @@ class _ReservationFormPageState extends State<ReservationFormPage> {
           final until = untilTs.toDate();
           if (until.isAfter(now)) {
             // Block from now until the exact maintenance end time
-            ranges.add(DateTimeRange(start: now, end: until));
+            ranges.add(DateTimeRange(
+              start: now,
+              end: until,
+            ));
           }
         }
       }
@@ -3710,28 +2960,19 @@ class _ReservationFormPageState extends State<ReservationFormPage> {
     if (_end.isBefore(_start)) {
       if (!mounted) return;
       setState(() => _loading = false);
-      ToastService.showError(
-        context,
-        'Error',
-        'End date must be after start date',
-      );
+      ToastService.showError(context, 'Error', 'End date must be after start date');
       return;
     }
 
     if (_isRangeBlocked(_start, _end)) {
       if (!mounted) return;
       setState(() => _loading = false);
-      ToastService.showError(
-        context,
-        'Error',
-        'Selected dates overlap with an existing reservation.',
-      );
+      ToastService.showError(context, 'Error', 'Selected dates overlap with an existing reservation.');
       return;
     }
 
-    final profileSnap = await CareCenterRepository.getUserProfile(
-      widget.renterId,
-    );
+    final profileSnap =
+        await CareCenterRepository.getUserProfile(widget.renterId);
     final profile = profileSnap.data() ?? {};
     final renterName = profile['name'] ?? 'Renter';
     final isTrusted = profile['isTrusted'] == true;
@@ -3748,7 +2989,7 @@ class _ReservationFormPageState extends State<ReservationFormPage> {
       requestType: _immediate ? 'immediate' : 'date_range',
       userTypeAtBooking: userType,
     );
-
+    
     // Notify admins
     await CareCenterRepository.notifyAdmins(
       type: 'reservation_request',
@@ -3758,18 +2999,15 @@ class _ReservationFormPageState extends State<ReservationFormPage> {
 
     if (!mounted) return;
     setState(() => _loading = false);
-    ToastService.showSuccess(
-      context,
-      'Success',
-      'Reservation request submitted',
-    );
+    ToastService.showSuccess(context, 'Success', 'Reservation request submitted');
     Navigator.pop(context);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Reserve ${widget.equipmentName}')),
+      appBar:
+          AppBar(title: Text('Reserve ${widget.equipmentName}')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -3793,8 +3031,7 @@ class _ReservationFormPageState extends State<ReservationFormPage> {
                   ListTile(
                     leading: const Icon(Icons.today_rounded),
                     title: Text(
-                      'Start: ${_start.toLocal().toString().split(' ').first}',
-                    ),
+                        'Start: ${_start.toLocal().toString().split(' ').first}'),
                     trailing: TextButton(
                       onPressed: _immediate ? null : _pickStart,
                       child: const Text('Change'),
@@ -3803,9 +3040,7 @@ class _ReservationFormPageState extends State<ReservationFormPage> {
                   const SizedBox(height: 8),
                   ListTile(
                     leading: const Icon(Icons.event_available_rounded),
-                    title: Text(
-                      'End: ${_end.toLocal().toString().split(' ').first}',
-                    ),
+                    title: Text('End: ${_end.toLocal().toString().split(' ').first}'),
                     trailing: TextButton(
                       onPressed: _pickEnd,
                       child: const Text('Change'),
@@ -3816,24 +3051,24 @@ class _ReservationFormPageState extends State<ReservationFormPage> {
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: _isRangeBlocked(_start, _end)
-                          ? Colors.red.shade50
+                      color: _isRangeBlocked(_start, _end) 
+                          ? Colors.red.shade50 
                           : Colors.green.shade50,
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(
-                        color: _isRangeBlocked(_start, _end)
-                            ? Colors.red.shade200
+                        color: _isRangeBlocked(_start, _end) 
+                            ? Colors.red.shade200 
                             : Colors.green.shade200,
                       ),
                     ),
                     child: Row(
                       children: [
                         Icon(
-                          _isRangeBlocked(_start, _end)
-                              ? Icons.error_outline_rounded
+                          _isRangeBlocked(_start, _end) 
+                              ? Icons.error_outline_rounded 
                               : Icons.check_circle_outline_rounded,
-                          color: _isRangeBlocked(_start, _end)
-                              ? Colors.red
+                          color: _isRangeBlocked(_start, _end) 
+                              ? Colors.red 
                               : Colors.green,
                           size: 20,
                         ),
@@ -3844,8 +3079,8 @@ class _ReservationFormPageState extends State<ReservationFormPage> {
                                 ? 'Selected dates overlap with an existing reservation.'
                                 : 'Dates are available.',
                             style: TextStyle(
-                              color: _isRangeBlocked(_start, _end)
-                                  ? Colors.red.shade700
+                              color: _isRangeBlocked(_start, _end) 
+                                  ? Colors.red.shade700 
                                   : Colors.green.shade700,
                               fontWeight: FontWeight.w500,
                             ),
@@ -4040,21 +3275,11 @@ class _AdminReservationsPageState extends State<AdminReservationsPage> {
           return (cb as Timestamp).compareTo(ca as Timestamp);
         });
 
-        final activeStatuses = {
-          'pending',
-          'approved',
-          'checked_out',
-          'maintenance',
-          'return_requested',
-        };
+        final activeStatuses = {'pending', 'approved', 'checked_out', 'maintenance', 'return_requested'};
         final historyStatuses = {'returned', 'declined'};
         final filteredDocs = docs.where((d) {
-          final status =
-              ((d.data() as Map<String, dynamic>)['status'] ?? 'pending')
-                  .toString();
-          return _showHistory
-              ? historyStatuses.contains(status)
-              : activeStatuses.contains(status);
+          final status = ((d.data() as Map<String, dynamic>)['status'] ?? 'pending').toString();
+          return _showHistory ? historyStatuses.contains(status) : activeStatuses.contains(status);
         }).toList();
 
         // Identify which equipment is currently physically rented out
@@ -4097,11 +3322,9 @@ class _AdminReservationsPageState extends State<AdminReservationsPage> {
             Expanded(
               child: filteredDocs.isEmpty
                   ? Center(
-                      child: Text(
-                        _showHistory
-                            ? 'No historical reservations yet.'
-                            : 'No active reservations yet.',
-                      ),
+                      child: Text(_showHistory
+                          ? 'No historical reservations yet.'
+                          : 'No active reservations yet.'),
                     )
                   : ListView.builder(
                       padding: const EdgeInsets.all(16),
@@ -4113,306 +3336,224 @@ class _AdminReservationsPageState extends State<AdminReservationsPage> {
                         final renter = data['renterName'] ?? 'Renter';
                         final status = (data['status'] ?? 'pending').toString();
                         final start = (data['startDate'] as Timestamp).toDate();
-                        final end = (data['endDate'] as Timestamp).toDate();
-                        final range =
-                            '${start.toLocal().toString().split(' ').first} → ${end.toLocal().toString().split(' ').first}';
+                  final end = (data['endDate'] as Timestamp).toDate();
+                  final range =
+                      '${start.toLocal().toString().split(' ').first} → ${end.toLocal().toString().split(' ').first}';
 
-                        final isPending = status == 'pending';
-                        final isClosed =
-                            status == 'declined' ||
-                            status == 'returned' ||
-                            status == 'maintenance';
-                        final cardColor = isClosed
-                            ? Colors.grey.shade200
-                            : Colors.white;
-                        final opacity = isClosed ? 0.6 : 1.0;
-                        final color = _statusColor(status);
+                  final isPending = status == 'pending';
+                  final isClosed = status == 'declined' ||
+                      status == 'returned' ||
+                      status == 'maintenance';
+                  final cardColor = isClosed ? Colors.grey.shade200 : Colors.white;
+                  final opacity = isClosed ? 0.6 : 1.0;
+                  final color = _statusColor(status);
 
-                        return AnimatedOpacity(
-                          duration: const Duration(milliseconds: 200),
-                          opacity: opacity,
-                          child: Card(
-                            color: cardColor,
-                            margin: const EdgeInsets.only(bottom: 12),
-                            child: Padding(
-                              padding: const EdgeInsets.all(12),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
+                  return AnimatedOpacity(
+                    duration: const Duration(milliseconds: 200),
+                    opacity: opacity,
+                    child: Card(
+                      color: cardColor,
+                      margin: const EdgeInsets.only(bottom: 12),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.event_repeat_rounded),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      const Icon(Icons.event_repeat_rounded),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              name.toString(),
-                                              style: Theme.of(context)
-                                                  .textTheme
-                                                  .titleMedium
-                                                  ?.copyWith(
-                                                    fontWeight: FontWeight.w600,
-                                                  ),
-                                            ),
-                                            const SizedBox(height: 4),
-                                            Text('Renter: $renter'),
-                                            Text(range),
-                                          ],
-                                        ),
+                                      Text(
+                                        name.toString(),
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .titleMedium
+                                            ?.copyWith(
+                                                fontWeight: FontWeight.w600),
                                       ),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 8,
-                                          vertical: 4,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: color.withOpacity(0.1),
-                                          borderRadius: BorderRadius.circular(
-                                            999,
-                                          ),
-                                        ),
-                                        child: Text(
-                                          formatEnumString(status),
-                                          style: TextStyle(
-                                            color: color,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
-                                      ),
+                                      const SizedBox(height: 4),
+                                      Text('Renter: $renter'),
+                                      Text(range),
                                     ],
                                   ),
-                                  const SizedBox(height: 8),
-                                  Wrap(
-                                    spacing: 8,
-                                    runSpacing: 4,
-                                    children: [
-                                      if (isPending && !_showHistory) ...[
-                                        FilledButton.icon(
-                                          style: FilledButton.styleFrom(
-                                            backgroundColor:
-                                                Colors.green.shade500,
-                                          ),
-                                          onPressed: () => _changeStatus(
-                                            context,
-                                            doc.id,
-                                            'approved',
-                                            equipmentId:
-                                                data['equipmentId'] as String?,
-                                            renterId:
-                                                data['renterId'] as String?,
-                                          ),
-                                          icon: const Icon(
-                                            Icons.check_circle_rounded,
-                                          ),
-                                          label: const Text('Accept'),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: color.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                  child: Text(
+                                    formatEnumString(status),
+                                    style: TextStyle(
+                                      color: color,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 4,
+                              children: [
+                                if (isPending && !_showHistory) ...[
+                                  FilledButton.icon(
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: Colors.green.shade500,
+                                    ),
+                                    onPressed: () => _changeStatus(
+                                      context,
+                                      doc.id,
+                                      'approved',
+                                      equipmentId:
+                                          data['equipmentId'] as String?,
+                                      renterId: data['renterId'] as String?,
+                                    ),
+                                    icon: const Icon(Icons.check_circle_rounded),
+                                    label: const Text('Accept'),
+                                  ),
+                                  FilledButton.icon(
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: Colors.red.shade400,
+                                    ),
+                                    onPressed: () => _changeStatus(
+                                      context,
+                                      doc.id,
+                                      'declined',
+                                      equipmentId:
+                                          data['equipmentId'] as String?,
+                                      renterId: data['renterId'] as String?,
+                                    ),
+                                    icon: const Icon(Icons.close_rounded),
+                                    label: const Text('Reject'),
+                                  ),
+                                ] else if (status == 'approved' && !_showHistory) ...[
+                                  Builder(
+                                    builder: (context) {
+                                      final eqId = data['equipmentId'] as String?;
+                                      final isBlocked = eqId != null && rentedEquipmentIds.contains(eqId);
+                                      return FilledButton.icon(
+                                        style: FilledButton.styleFrom(
+                                          backgroundColor: isBlocked ? Colors.grey : Colors.purple.shade500,
                                         ),
-                                        FilledButton.icon(
-                                          style: FilledButton.styleFrom(
-                                            backgroundColor:
-                                                Colors.red.shade400,
-                                          ),
-                                          onPressed: () => _changeStatus(
-                                            context,
-                                            doc.id,
-                                            'declined',
-                                            equipmentId:
-                                                data['equipmentId'] as String?,
-                                            renterId:
-                                                data['renterId'] as String?,
-                                          ),
-                                          icon: const Icon(Icons.close_rounded),
-                                          label: const Text('Reject'),
-                                        ),
-                                      ] else if (status == 'approved' &&
-                                          !_showHistory) ...[
-                                        Builder(
-                                          builder: (context) {
-                                            final eqId =
-                                                data['equipmentId'] as String?;
-                                            final isBlocked =
-                                                eqId != null &&
-                                                rentedEquipmentIds.contains(
-                                                  eqId,
-                                                );
-                                            return FilledButton.icon(
-                                              style: FilledButton.styleFrom(
-                                                backgroundColor: isBlocked
-                                                    ? Colors.grey
-                                                    : Colors.purple.shade500,
-                                              ),
-                                              onPressed: isBlocked
-                                                  ? null
-                                                  : () => _changeStatus(
-                                                      context,
-                                                      doc.id,
-                                                      'checked_out',
-                                                      equipmentId: eqId,
-                                                      renterId:
-                                                          data['renterId']
-                                                              as String?,
-                                                    ),
-                                              icon: const Icon(
-                                                Icons.outbond_rounded,
-                                              ),
-                                              label: const Text('Check Out'),
-                                            );
-                                          },
-                                        ),
-                                        FilledButton.icon(
-                                          style: FilledButton.styleFrom(
-                                            backgroundColor:
-                                                Colors.red.shade400,
-                                          ),
-                                          onPressed: () => _changeStatus(
-                                            context,
-                                            doc.id,
-                                            'declined',
-                                            equipmentId:
-                                                data['equipmentId'] as String?,
-                                            renterId:
-                                                data['renterId'] as String?,
-                                          ),
-                                          icon: const Icon(
-                                            Icons.cancel_rounded,
-                                          ),
-                                          label: const Text('Cancel'),
-                                        ),
-                                      ] else if ((status == 'checked_out' ||
-                                              status == 'return_requested') &&
-                                          !_showHistory) ...[
-                                        if (status == 'return_requested')
-                                          Padding(
-                                            padding: const EdgeInsets.only(
-                                              bottom: 8.0,
-                                            ),
-                                            child: Row(
-                                              children: [
-                                                Icon(
-                                                  Icons.info_outline_rounded,
-                                                  size: 16,
-                                                  color:
-                                                      data['userReportedMaintenance'] ==
-                                                          true
-                                                      ? Colors.orange
-                                                      : Colors.green,
-                                                ),
-                                                const SizedBox(width: 4),
-                                                Text(
-                                                  'User marked as returned${data['userReportedMaintenance'] == true ? ' (Needs Maintenance)' : ''}',
-                                                  style: TextStyle(
-                                                    fontWeight: FontWeight.bold,
-                                                    color:
-                                                        data['userReportedMaintenance'] ==
-                                                            true
-                                                        ? Colors.orange
-                                                        : Colors.green,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          )
-                                        else
-                                          Padding(
-                                            padding: const EdgeInsets.only(
-                                              bottom: 8.0,
-                                            ),
-                                            child: Row(
-                                              children: [
-                                                const Icon(
-                                                  Icons.info_outline_rounded,
-                                                  size: 16,
-                                                  color: Colors.red,
-                                                ),
-                                                const SizedBox(width: 4),
-                                                const Text(
-                                                  'Not returned yet',
-                                                  style: TextStyle(
-                                                    fontWeight: FontWeight.bold,
-                                                    color: Colors.red,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        FilledButton.icon(
-                                          style: FilledButton.styleFrom(
-                                            backgroundColor:
-                                                (status == 'checked_out' ||
-                                                    data['userReportedMaintenance'] ==
-                                                        true)
-                                                ? Colors.grey
-                                                : Colors.green.shade500,
-                                          ),
-                                          onPressed:
-                                              (status == 'checked_out' ||
-                                                  data['userReportedMaintenance'] ==
-                                                      true)
-                                              ? null
-                                              : () => _changeStatus(
+                                        onPressed: isBlocked
+                                            ? null
+                                            : () => _changeStatus(
                                                   context,
                                                   doc.id,
-                                                  'returned',
-                                                  equipmentId:
-                                                      data['equipmentId']
-                                                          as String?,
-                                                  renterId:
-                                                      data['renterId']
-                                                          as String?,
+                                                  'checked_out',
+                                                  equipmentId: eqId,
+                                                  renterId: data['renterId'] as String?,
                                                 ),
-                                          icon: const Icon(
-                                            Icons.check_circle_outline_rounded,
+                                        icon: const Icon(Icons.outbond_rounded),
+                                        label: const Text('Check Out'),
+                                      );
+                                    }
+                                  ),
+                                  FilledButton.icon(
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: Colors.red.shade400,
+                                    ),
+                                    onPressed: () => _changeStatus(
+                                      context,
+                                      doc.id,
+                                      'declined',
+                                      equipmentId:
+                                          data['equipmentId'] as String?,
+                                      renterId: data['renterId'] as String?,
+                                    ),
+                                    icon: const Icon(Icons.cancel_rounded),
+                                    label: const Text('Cancel'),
+                                  ),
+                                ] else if ((status == 'checked_out' || status == 'return_requested') && !_showHistory) ...[
+                                  if (status == 'return_requested')
+                                    Padding(
+                                      padding: const EdgeInsets.only(bottom: 8.0),
+                                      child: Row(
+                                        children: [
+                                          Icon(Icons.info_outline_rounded, size: 16, color: data['userReportedMaintenance'] == true ? Colors.orange : Colors.green),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            'User marked as returned${data['userReportedMaintenance'] == true ? ' (Needs Maintenance)' : ''}',
+                                            style: TextStyle(fontWeight: FontWeight.bold, color: data['userReportedMaintenance'] == true ? Colors.orange : Colors.green),
                                           ),
-                                          label: const Text('Mark returned'),
-                                        ),
-                                        FilledButton.icon(
-                                          style: FilledButton.styleFrom(
-                                            backgroundColor:
-                                                status == 'checked_out'
-                                                ? Colors.grey
-                                                : Colors.orange.shade600,
+                                        ],
+                                      ),
+                                    )
+                                  else
+                                    Padding(
+                                      padding: const EdgeInsets.only(bottom: 8.0),
+                                      child: Row(
+                                        children: [
+                                          const Icon(Icons.info_outline_rounded, size: 16, color: Colors.red),
+                                          const SizedBox(width: 4),
+                                          const Text(
+                                            'Not returned yet',
+                                            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red),
                                           ),
-                                          onPressed: status == 'checked_out'
-                                              ? null
-                                              : () async {
-                                                  final until =
-                                                      await _pickMaintenanceUntil(
-                                                        context,
-                                                      );
-                                                  if (until == null) return;
-                                                  if (!context.mounted) return;
-                                                  await _changeStatus(
-                                                    context,
-                                                    doc.id,
-                                                    'maintenance',
-                                                    equipmentId:
-                                                        data['equipmentId']
-                                                            as String?,
-                                                    renterId:
-                                                        data['renterId']
-                                                            as String?,
-                                                    maintenanceUntil: until,
-                                                  );
-                                                },
-                                          icon: const Icon(
-                                            Icons.build_circle_rounded,
-                                          ),
-                                          label: const Text(
-                                            'Send to maintenance',
-                                          ),
-                                        ),
-                                      ],
-                                    ],
+                                        ],
+                                      ),
+                                    ),
+                                  FilledButton.icon(
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: (status == 'checked_out' || data['userReportedMaintenance'] == true) ? Colors.grey : Colors.green.shade500,
+                                    ),
+                                    onPressed: (status == 'checked_out' || data['userReportedMaintenance'] == true)
+                                        ? null
+                                        : () => _changeStatus(
+                                              context,
+                                              doc.id,
+                                              'returned',
+                                              equipmentId:
+                                                  data['equipmentId'] as String?,
+                                              renterId: data['renterId'] as String?,
+                                            ),
+                                    icon: const Icon(
+                                        Icons.check_circle_outline_rounded),
+                                    label: const Text('Mark returned'),
+                                  ),
+                                  FilledButton.icon(
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: status == 'checked_out' ? Colors.grey : Colors.orange.shade600,
+                                    ),
+                                    onPressed: status == 'checked_out'
+                                        ? null
+                                        : () async {
+                                      final until =
+                                          await _pickMaintenanceUntil(context);
+                                      if (until == null) return;
+                                      if (!context.mounted) return;
+                                      await _changeStatus(
+                                        context,
+                                        doc.id,
+                                        'maintenance',
+                                        equipmentId:
+                                            data['equipmentId'] as String?,
+                                        renterId:
+                                            data['renterId'] as String?,
+                                        maintenanceUntil: until,
+                                      );
+                                    },
+                                    icon: const Icon(Icons.build_circle_rounded),
+                                    label: const Text('Send to maintenance'),
                                   ),
                                 ],
-                              ),
+                              ],
                             ),
-                          ),
-                        );
-                      },
+                          ],
+                        ),
+                      ),
                     ),
+                  );
+                },
+              ),
             ),
           ],
         );
@@ -4428,11 +3569,7 @@ class _AdminReservationsPageState extends State<AdminReservationsPage> {
 class UserRentalsPage extends StatefulWidget {
   final String? userId;
   final bool initialShowHistory;
-  const UserRentalsPage({
-    super.key,
-    required this.userId,
-    this.initialShowHistory = false,
-  });
+  const UserRentalsPage({super.key, required this.userId, this.initialShowHistory = false});
 
   @override
   State<UserRentalsPage> createState() => _UserRentalsPageState();
@@ -4461,12 +3598,9 @@ class _UserRentalsPageState extends State<UserRentalsPage> {
               const SizedBox(height: 16),
               CheckboxListTile(
                 title: const Text('Report Maintenance Issue'),
-                subtitle: const Text(
-                  'Check this if the item is damaged or not working',
-                ),
+                subtitle: const Text('Check this if the item is damaged or not working'),
                 value: needsMaintenance,
-                onChanged: (val) =>
-                    setState(() => needsMaintenance = val ?? false),
+                onChanged: (val) => setState(() => needsMaintenance = val ?? false),
               ),
             ],
           ),
@@ -4478,31 +3612,23 @@ class _UserRentalsPageState extends State<UserRentalsPage> {
             FilledButton(
               onPressed: () async {
                 Navigator.pop(context);
-                await CareCenterRepository.reservationsCol
-                    .doc(reservationId)
-                    .update({
-                      'status': 'return_requested',
-                      'userReportedMaintenance': needsMaintenance,
-                    });
-
+                await CareCenterRepository.reservationsCol.doc(reservationId).update({
+                  'status': 'return_requested',
+                  'userReportedMaintenance': needsMaintenance,
+                });
+                
                 // Notify admins
                 await CareCenterRepository.notifyAdmins(
                   type: needsMaintenance ? 'maintenance' : 'return_requested',
-                  title: needsMaintenance
-                      ? 'Maintenance Reported'
-                      : 'Equipment Returned',
-                  message: needsMaintenance
-                      ? 'A user reported maintenance issue for a returned item.'
+                  title: needsMaintenance ? 'Maintenance Reported' : 'Equipment Returned',
+                  message: needsMaintenance 
+                      ? 'A user reported maintenance issue for a returned item.' 
                       : 'A user has returned an equipment.',
                   reservationId: reservationId,
                 );
 
                 if (mounted) {
-                  ToastService.showSuccess(
-                    context,
-                    'Success',
-                    'Return requested successfully',
-                  );
+                  ToastService.showSuccess(context, 'Success', 'Return requested successfully');
                 }
               },
               child: const Text('Confirm Return'),
@@ -4513,19 +3639,11 @@ class _UserRentalsPageState extends State<UserRentalsPage> {
     );
   }
 
-  Future<void> _updateReturnDate(
-    String reservationId,
-    DateTime start,
-    DateTime currentEnd,
-  ) async {
+  Future<void> _updateReturnDate(String reservationId, DateTime start, DateTime currentEnd) async {
     // Normalize start date to midnight to ensure valid range
     final firstDate = DateTime(start.year, start.month, start.day);
-    final lastDate = DateTime(
-      currentEnd.year,
-      currentEnd.month,
-      currentEnd.day,
-    );
-
+    final lastDate = DateTime(currentEnd.year, currentEnd.month, currentEnd.day);
+    
     final picked = await showDatePicker(
       context: context,
       initialDate: lastDate,
@@ -4553,11 +3671,7 @@ class _UserRentalsPageState extends State<UserRentalsPage> {
         'endDate': Timestamp.fromDate(newEnd),
       });
 
-      ToastService.showSuccess(
-        context,
-        'Success',
-        'Return date updated successfully',
-      );
+      ToastService.showSuccess(context, 'Success', 'Return date updated successfully');
     }
   }
 
@@ -4585,7 +3699,9 @@ class _UserRentalsPageState extends State<UserRentalsPage> {
   @override
   Widget build(BuildContext context) {
     if (widget.userId == null) {
-      return const Center(child: Text('Sign in to view your rentals.'));
+      return const Center(
+        child: Text('Sign in to view your rentals.'),
+      );
     }
 
     return StreamBuilder<QuerySnapshot>(
@@ -4599,7 +3715,7 @@ class _UserRentalsPageState extends State<UserRentalsPage> {
         if (snap.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
-
+        
         final docs = snap.data?.docs.toList() ?? [];
         docs.sort((a, b) {
           final da = (a.data() as Map<String, dynamic>)['createdAt'];
@@ -4608,21 +3724,11 @@ class _UserRentalsPageState extends State<UserRentalsPage> {
           return (db as Timestamp).compareTo(da as Timestamp);
         });
 
-        final activeStatuses = {
-          'pending',
-          'approved',
-          'checked_out',
-          'maintenance',
-          'return_requested',
-        };
+        final activeStatuses = {'pending', 'approved', 'checked_out', 'maintenance', 'return_requested'};
         final historyStatuses = {'returned', 'declined'};
         final filteredDocs = docs.where((d) {
-          final status =
-              ((d.data() as Map<String, dynamic>)['status'] ?? 'pending')
-                  .toString();
-          return _showHistory
-              ? historyStatuses.contains(status)
-              : activeStatuses.contains(status);
+          final status = ((d.data() as Map<String, dynamic>)['status'] ?? 'pending').toString();
+          return _showHistory ? historyStatuses.contains(status) : activeStatuses.contains(status);
         }).toList();
 
         return Column(
@@ -4654,18 +3760,15 @@ class _UserRentalsPageState extends State<UserRentalsPage> {
             Expanded(
               child: filteredDocs.isEmpty
                   ? Center(
-                      child: Text(
-                        _showHistory
-                            ? 'No historical rentals yet.'
-                            : 'No active rentals yet.',
-                      ),
+                      child: Text(_showHistory
+                          ? 'No historical rentals yet.'
+                          : 'No active rentals yet.'),
                     )
                   : ListView.builder(
                       padding: const EdgeInsets.all(16),
                       itemCount: filteredDocs.length,
                       itemBuilder: (context, i) {
-                        final data =
-                            filteredDocs[i].data() as Map<String, dynamic>;
+                        final data = filteredDocs[i].data() as Map<String, dynamic>;
                         final name = data['equipmentName'] ?? 'Equipment';
                         final status = (data['status'] ?? 'pending').toString();
                         final color = _statusColor(status);
@@ -4675,9 +3778,7 @@ class _UserRentalsPageState extends State<UserRentalsPage> {
                             '${start.toLocal().toString().split(' ').first} → ${end.toLocal().toString().split(' ').first}';
 
                         final isHistoryItem = historyStatuses.contains(status);
-                        final cardColor = isHistoryItem
-                            ? Colors.grey.shade200
-                            : Colors.white;
+                        final cardColor = isHistoryItem ? Colors.grey.shade200 : Colors.white;
                         final opacity = isHistoryItem ? 0.6 : 1.0;
 
                         return AnimatedOpacity(
@@ -4687,90 +3788,72 @@ class _UserRentalsPageState extends State<UserRentalsPage> {
                             color: cardColor,
                             margin: const EdgeInsets.only(bottom: 12),
                             child: ListTile(
-                              leading: const Icon(Icons.event_repeat_rounded),
-                              title: Text(name.toString()),
-                              subtitle: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(range),
-                                  const SizedBox(height: 2),
-                                  Row(
-                                    children: [
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 8,
-                                          vertical: 4,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: color.withOpacity(0.1),
-                                          borderRadius: BorderRadius.circular(
-                                            999,
-                                          ),
-                                        ),
-                                        child: Text(
-                                          formatEnumString(status),
-                                          style: TextStyle(
-                                            color: color,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        'Step: ${CareCenterRepository.statusToStepPublic(status)}/5',
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .bodySmall
-                                            ?.copyWith(color: Colors.grey[600]),
-                                      ),
-                                    ],
+                      leading: const Icon(Icons.event_repeat_rounded),
+                      title: Text(name.toString()),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(range),
+                          const SizedBox(height: 2),
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: color.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: Text(
+                                  formatEnumString(status),
+                                  style: TextStyle(
+                                    color: color,
+                                    fontWeight: FontWeight.w500,
                                   ),
-                                ],
+                                ),
                               ),
-                              trailing: status == 'checked_out'
-                                  ? Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        IconButton(
-                                          icon: const Icon(
-                                            Icons.edit_calendar_rounded,
-                                          ),
-                                          tooltip: 'Update Return Date',
-                                          onPressed: () {
-                                            final start =
-                                                (data['startDate'] as Timestamp)
-                                                    .toDate();
-                                            final end =
-                                                (data['endDate'] as Timestamp)
-                                                    .toDate();
-                                            _updateReturnDate(
-                                              filteredDocs[i].id,
-                                              start,
-                                              end,
-                                            );
-                                          },
-                                        ),
-                                        const SizedBox(width: 8),
-                                        FilledButton(
-                                          onPressed: () => _showReturnDialog(
-                                            filteredDocs[i].id,
-                                          ),
-                                          style: FilledButton.styleFrom(
-                                            backgroundColor: Colors.orange,
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 16,
-                                            ),
-                                          ),
-                                          child: const Text('Return'),
-                                        ),
-                                      ],
-                                    )
-                                  : null,
-                            ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Step: ${CareCenterRepository.statusToStepPublic(status)}/5',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(color: Colors.grey[600]),
+                              ),
+                            ],
                           ),
-                        );
-                      },
+                        ],
+                      ),
+                      trailing: status == 'checked_out'
+                          ? Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.edit_calendar_rounded),
+                                  tooltip: 'Update Return Date',
+                                  onPressed: () {
+                                    final start = (data['startDate'] as Timestamp).toDate();
+                                    final end = (data['endDate'] as Timestamp).toDate();
+                                    _updateReturnDate(filteredDocs[i].id, start, end);
+                                  },
+                                ),
+                                const SizedBox(width: 8),
+                                FilledButton(
+                                  onPressed: () => _showReturnDialog(filteredDocs[i].id),
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: Colors.orange,
+                                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                                  ),
+                                  child: const Text('Return'),
+                                ),
+                              ],
+                            )
+                          : null,
                     ),
+                  ),
+                );
+                },
+              ),
             ),
           ],
         );
@@ -4787,7 +3870,11 @@ class DonationsPage extends StatelessWidget {
   final String role;
   final String? userId;
 
-  const DonationsPage({super.key, required this.role, required this.userId});
+  const DonationsPage({
+    super.key,
+    required this.role,
+    required this.userId,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -4828,8 +3915,8 @@ class DonationsPage extends StatelessWidget {
             stream: isAdmin
                 ? CareCenterRepository.donationsCol.snapshots()
                 : CareCenterRepository.donationsCol
-                      .where('donorId', isEqualTo: userId)
-                      .snapshots(),
+                    .where('donorId', isEqualTo: userId)
+                    .snapshots(),
             builder: (context, snap) {
               if (snap.hasError) {
                 return Center(child: Text('Error: ${snap.error}'));
@@ -4839,8 +3926,7 @@ class DonationsPage extends StatelessWidget {
               }
               if (!snap.hasData || snap.data!.docs.isEmpty) {
                 return const Center(
-                  child: Text('No donations yet. Be the first!'),
-                );
+                    child: Text('No donations yet. Be the first!'));
               }
 
               final docs = snap.data!.docs.toList();
@@ -4911,10 +3997,8 @@ class _DonationTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final rawName = (data['donorName'] ?? '').toString();
     final rawType = (data['itemType'] ?? 'Item').toString();
-    final displayName = rawName.isNotEmpty
-        ? rawName
-        : formatEnumString(rawType);
-
+    final displayName = rawName.isNotEmpty ? rawName : formatEnumString(rawType);
+    
     final status = (data['status'] ?? 'pending').toString();
     final donor = data['donorName'] ?? 'Donor';
     final color = _statusColor(status);
@@ -4922,7 +4006,8 @@ class _DonationTile extends StatelessWidget {
     final imageUrl = photos.isNotEmpty ? photos.first : null;
 
     final isPending = status == 'pending';
-    final isClosed = status == 'added_to_inventory' || status == 'rejected';
+    final isClosed =
+        status == 'added_to_inventory' || status == 'rejected';
     final cardColor = isClosed ? Colors.grey.shade200 : Colors.white;
     final opacity = isClosed ? 0.6 : 1.0;
 
@@ -4954,9 +4039,7 @@ class _DonationTile extends StatelessWidget {
                                   child: SizedBox(
                                     width: 18,
                                     height: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
+                                    child: CircularProgressIndicator(strokeWidth: 2),
                                   ),
                                 );
                               },
@@ -4965,7 +4048,8 @@ class _DonationTile extends StatelessWidget {
                                 size: 32,
                               ),
                             )
-                          : const Icon(Icons.card_giftcard_rounded, size: 32),
+                          : const Icon(Icons.card_giftcard_rounded,
+                              size: 32),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -4975,7 +4059,9 @@ class _DonationTile extends StatelessWidget {
                       children: [
                         Text(
                           displayName.toString(),
-                          style: Theme.of(context).textTheme.titleMedium
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleMedium
                               ?.copyWith(fontWeight: FontWeight.w600),
                         ),
                         const SizedBox(height: 4),
@@ -4987,9 +4073,7 @@ class _DonationTile extends StatelessWidget {
                   ),
                   Container(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
+                        horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
                       color: color.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(999),
@@ -5017,12 +4101,8 @@ class _DonationTile extends StatelessWidget {
                         padding: const EdgeInsets.only(right: 8.0),
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(8),
-                          child: Image.network(
-                            img,
-                            width: 56,
-                            height: 56,
-                            fit: BoxFit.cover,
-                          ),
+                          child: Image.network(img,
+                              width: 56, height: 56, fit: BoxFit.cover),
                         ),
                       );
                     },
@@ -5041,12 +4121,15 @@ class _DonationTile extends StatelessWidget {
                         final photos =
                             (data['photos'] as List?)?.cast<String>() ?? [];
 
-                        final eqId = await CareCenterRepository.addEquipment(
-                          name: displayName.toString(),
-                          type: (data['itemType'] ?? 'other').toString(),
-                          description: (data['description'] ?? 'Donated item')
-                              .toString(),
-                          condition: (data['condition'] ?? 'good').toString(),
+                        final eqId =
+                            await CareCenterRepository.addEquipment(
+                            name: displayName.toString(),
+                            type: (data['itemType'] ?? 'other').toString(),
+                          description:
+                              (data['description'] ?? 'Donated item')
+                                  .toString(),
+                          condition:
+                              (data['condition'] ?? 'good').toString(),
                           quantityTotal: qty,
                           location: 'Main branch',
                           rentalPricePerDay: null,
@@ -5074,13 +4157,10 @@ class _DonationTile extends StatelessWidget {
                         );
 
                         if (!context.mounted) return;
-                        ToastService.showSuccess(
-                          context,
-                          'Success',
-                          'Donation approved and added',
-                        );
+                        ToastService.showSuccess(context, 'Success', 'Donation approved and added');
                       },
-                      icon: const Icon(Icons.check_circle_rounded),
+                      icon:
+                          const Icon(Icons.check_circle_rounded),
                       label: const Text('Accept & add'),
                     ),
                     FilledButton.icon(
@@ -5103,11 +4183,7 @@ class _DonationTile extends StatelessWidget {
                         );
 
                         if (!context.mounted) return;
-                        ToastService.showInfo(
-                          context,
-                          'Info',
-                          'Donation rejected',
-                        );
+                        ToastService.showInfo(context, 'Info', 'Donation rejected');
                       },
                       icon: const Icon(Icons.close_rounded),
                       label: const Text('Reject'),
@@ -5213,7 +4289,8 @@ class _DonationFormPageState extends State<DonationFormPage> {
                       controller: _contactCtrl,
                       decoration: const InputDecoration(
                         labelText: 'Contact info',
-                        prefixIcon: Icon(Icons.contact_phone_rounded),
+                        prefixIcon:
+                            Icon(Icons.contact_phone_rounded),
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -5221,30 +4298,19 @@ class _DonationFormPageState extends State<DonationFormPage> {
                       initialValue: _itemType,
                       decoration: const InputDecoration(
                         labelText: 'Item type',
-                        prefixIcon: Icon(Icons.medical_services_rounded),
+                        prefixIcon:
+                            Icon(Icons.medical_services_rounded),
                       ),
                       items: const [
                         DropdownMenuItem(
-                          value: 'wheelchair',
-                          child: Text('Wheelchair'),
-                        ),
+                            value: 'wheelchair', child: Text('Wheelchair')),
                         DropdownMenuItem(
-                          value: 'walker',
-                          child: Text('Walker'),
-                        ),
+                            value: 'walker', child: Text('Walker')),
                         DropdownMenuItem(
-                          value: 'crutches',
-                          child: Text('Crutches'),
-                        ),
+                            value: 'crutches', child: Text('Crutches')),
                         DropdownMenuItem(value: 'bed', child: Text('Bed')),
-                        DropdownMenuItem(
-                          value: 'oxygen_machine',
-                          child: Text('Oxygen machine'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'mobility_scooter',
-                          child: Text('Mobility scooter'),
-                        ),
+                        DropdownMenuItem(value: 'oxygen_machine', child: Text('Oxygen machine')),
+                        DropdownMenuItem(value: 'mobility_scooter', child: Text('Mobility scooter')),
                       ],
                       onChanged: (v) =>
                           setState(() => _itemType = v ?? 'wheelchair'),
@@ -5261,9 +4327,8 @@ class _DonationFormPageState extends State<DonationFormPage> {
                         DropdownMenuItem(value: 'good', child: Text('Good')),
                         DropdownMenuItem(value: 'fair', child: Text('Fair')),
                         DropdownMenuItem(
-                          value: 'needs_repair',
-                          child: Text('Needs repair'),
-                        ),
+                            value: 'needs_repair',
+                            child: Text('Needs repair')),
                       ],
                       onChanged: (v) =>
                           setState(() => _condition = v ?? 'good'),
@@ -5322,7 +4387,11 @@ class ProfilePage extends StatelessWidget {
   final String role;
   final String? userId;
 
-  const ProfilePage({super.key, required this.role, required this.userId});
+  const ProfilePage({
+    super.key,
+    required this.role,
+    required this.userId,
+  });
 
   Future<void> _signOut(BuildContext context) async {
     await AuthService.signOut();
@@ -5389,23 +4458,20 @@ class ProfilePage extends StatelessWidget {
                         children: [
                           Text(
                             name.toString(),
-                            style: tt.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w600,
-                            ),
+                            style: tt.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w600),
                           ),
                           const SizedBox(height: 4),
                           Text(
                             'Role: $roleStr',
-                            style: tt.bodyMedium?.copyWith(
-                              color: Colors.grey[700],
-                            ),
+                            style: tt.bodyMedium
+                                ?.copyWith(color: Colors.grey[700]),
                           ),
                           const SizedBox(height: 4),
                           Text(
                             email.toString(),
-                            style: tt.bodySmall?.copyWith(
-                              color: Colors.grey[600],
-                            ),
+                            style: tt.bodySmall
+                                ?.copyWith(color: Colors.grey[600]),
                           ),
                         ],
                       ),
@@ -5425,7 +4491,8 @@ class ProfilePage extends StatelessWidget {
                   ),
                   const Divider(height: 0),
                   ListTile(
-                    leading: const Icon(Icons.notifications_active_rounded),
+                    leading:
+                        const Icon(Icons.notifications_active_rounded),
                     title: const Text('Preferred contact'),
                     subtitle: Text(preferred.toString()),
                   ),
@@ -5438,8 +4505,10 @@ class ProfilePage extends StatelessWidget {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) =>
-                              UserHistoryPage(userId: userId!, role: roleStr),
+                          builder: (_) => UserHistoryPage(
+                            userId: userId!,
+                            role: roleStr,
+                          ),
                         ),
                       );
                     },
@@ -5494,11 +4563,8 @@ class UserHistoryPage extends StatelessWidget {
 
 String formatEnumString(String s) {
   if (s.isEmpty) return s;
-  return s
-      .split('_')
-      .map((word) {
-        if (word.isEmpty) return '';
-        return word[0].toUpperCase() + word.substring(1).toLowerCase();
-      })
-      .join(' ');
+  return s.split('_').map((word) {
+    if (word.isEmpty) return '';
+    return word[0].toUpperCase() + word.substring(1).toLowerCase();
+  }).join(' ');
 }
