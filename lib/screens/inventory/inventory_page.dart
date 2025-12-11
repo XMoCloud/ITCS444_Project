@@ -20,6 +20,7 @@ class _InventoryPageState extends State<InventoryPage> {
   String _availabilityFilter = 'all';
   String _typeFilter = 'all';
   bool _donatedOnly = false;
+  bool _isGridView = false;
 
   void _openFilters() {
     String tempType = _typeFilter;
@@ -171,6 +172,23 @@ class _InventoryPageState extends State<InventoryPage> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: IconButton(
+                    onPressed: () => setState(() => _isGridView = !_isGridView),
+                    icon: Icon(
+                      _isGridView
+                          ? Icons.view_list_rounded
+                          : Icons.grid_view_rounded,
+                      color: Colors.white,
+                    ),
+                    tooltip: _isGridView ? 'List view' : 'Grid view',
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: IconButton(
                     onPressed: _openFilters,
                     icon: const Icon(
                       Icons.filter_list_rounded,
@@ -288,6 +306,31 @@ class _InventoryPageState extends State<InventoryPage> {
                   if (da == null || db == null) return 0;
                   return (db as Timestamp).compareTo(da as Timestamp);
                 });
+
+                if (_isGridView) {
+                  return GridView.builder(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 2,
+                      crossAxisSpacing: 12,
+                      mainAxisSpacing: 12,
+                      childAspectRatio: 0.75,
+                    ),
+                    itemCount: docs.length,
+                    itemBuilder: (context, i) {
+                      final doc = docs[i];
+                      final data = doc.data() as Map<String, dynamic>;
+                      return EquipmentCard(
+                        docId: doc.id,
+                        data: data,
+                        role: widget.role,
+                        userId: widget.userId,
+                        isGrid: true,
+                      );
+                    },
+                  );
+                }
 
                 return ListView.builder(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),

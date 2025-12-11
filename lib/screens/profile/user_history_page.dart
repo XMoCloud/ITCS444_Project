@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../reservations/user_rentals_page.dart';
+import '../reservations/admin_reservations_page.dart';
 import '../donations/donations_page.dart';
 
 class UserHistoryPage extends StatelessWidget {
@@ -23,7 +24,9 @@ class UserHistoryPage extends StatelessWidget {
         ),
         body: TabBarView(
           children: [
-            UserRentalsPage(userId: userId, initialShowHistory: true),
+            role == 'admin'
+                ? AdminReservationsPage(adminId: userId)
+                : UserRentalsPage(userId: userId, initialShowHistory: true),
             DonationsPage(role: role, userId: userId),
           ],
         ),

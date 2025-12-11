@@ -12,6 +12,7 @@ class EquipmentCard extends StatefulWidget {
   final Map<String, dynamic> data;
   final String role;
   final String? userId;
+  final bool isGrid;
 
   const EquipmentCard({
     super.key,
@@ -19,6 +20,7 @@ class EquipmentCard extends StatefulWidget {
     required this.data,
     required this.role,
     required this.userId,
+    this.isGrid = false,
   });
 
   IconData _typeIcon(String type) {
@@ -57,6 +59,7 @@ class _EquipmentCardState extends State<EquipmentCard> {
   Timer? _timer;
   String _timeRemaining = '';
   bool _autoReleased = false;
+  bool _isDescriptionExpanded = false;
 
   @override
   void initState() {
@@ -170,6 +173,188 @@ class _EquipmentCardState extends State<EquipmentCard> {
     final isAdmin = role == 'admin';
     final isDonated = (data['isDonatedItem'] ?? false) as bool;
     final donorId = (data['donorId'] ?? '').toString();
+    final description = (data['description'] ?? '').toString();
+
+    if (widget.isGrid) {
+      return Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFF9DB2BF).withOpacity(0.3)),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF526D82).withOpacity(0.08),
+              blurRadius: 8,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: ClipRRect(
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(16)),
+                child: Container(
+                  color: Colors.grey[100],
+                  child: imageUrl != null
+                      ? Image.network(
+                          imageUrl,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Icon(
+                            widget._typeIcon(type.toString()),
+                            size: 40,
+                            color: Colors.grey,
+                          ),
+                        )
+                      : Icon(
+                          widget._typeIcon(type.toString()),
+                          size: 40,
+                          color: Colors.grey,
+                        ),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name.toString(),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${formatEnumString(type.toString())} • ${data['condition'] ?? 'n/a'}',
+                    style: TextStyle(
+                      color: Colors.grey[600],
+                      fontSize: 11,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          statusColor.withOpacity(0.15),
+                          statusColor.withOpacity(0.05),
+                        ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: statusColor.withOpacity(0.3),
+                      ),
+                    ),
+                    child: Text(
+                      formatEnumString(status),
+                      style: TextStyle(
+                        color: statusColor,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 32,
+                    child: isAdmin
+                        ? Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton(
+                                  onPressed: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => EditEquipmentPage(
+                                          equipmentId: docId,
+                                          initialData: data,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                  style: OutlinedButton.styleFrom(
+                                    padding: EdgeInsets.zero,
+                                    side:
+                                        BorderSide(color: Colors.blue.shade300),
+                                  ),
+                                  child: const Icon(Icons.edit, size: 16),
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: OutlinedButton(
+                                  onPressed: () async {
+                                    await CareCenterRepository.deleteEquipment(
+                                        docId);
+                                    if (!mounted) return;
+                                    ToastService.showSuccess(
+                                      context,
+                                      'Success',
+                                      'Equipment deleted',
+                                    );
+                                  },
+                                  style: OutlinedButton.styleFrom(
+                                    padding: EdgeInsets.zero,
+                                    side:
+                                        BorderSide(color: Colors.red.shade300),
+                                    foregroundColor: Colors.red,
+                                  ),
+                                  child: const Icon(Icons.delete, size: 16),
+                                ),
+                              ),
+                            ],
+                          )
+                        : FilledButton(
+                            onPressed: () {
+                              if (userId == null) {
+                                ToastService.showInfo(
+                                  context,
+                                  'Info',
+                                  'Sign in',
+                                );
+                                return;
+                              }
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => ReservationFormPage(
+                                    equipmentId: docId,
+                                    equipmentName: name.toString(),
+                                    equipmentType: type.toString(),
+                                    renterId: userId,
+                                  ),
+                                ),
+                              );
+                            },
+                            style: FilledButton.styleFrom(
+                              padding: EdgeInsets.zero,
+                            ),
+                            child: const Text('Reserve',
+                                style: TextStyle(fontSize: 12)),
+                          ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -268,6 +453,48 @@ class _EquipmentCardState extends State<EquipmentCard> {
                                     .toString()
                                     .isNotEmpty)
                                   Text('Location: ${data['location']}'),
+                                if (description.isNotEmpty) ...[
+                                  const SizedBox(height: 4),
+                                  InkWell(
+                                    onTap: () {
+                                      setState(() {
+                                        _isDescriptionExpanded =
+                                            !_isDescriptionExpanded;
+                                      });
+                                    },
+                                    child: Row(
+                                      children: [
+                                        Text(
+                                          'Description',
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .bodySmall
+                                              ?.copyWith(
+                                                fontWeight: FontWeight.w600,
+                                                color: Colors.blueGrey,
+                                              ),
+                                        ),
+                                        Icon(
+                                          _isDescriptionExpanded
+                                              ? Icons.keyboard_arrow_up_rounded
+                                              : Icons.keyboard_arrow_down_rounded,
+                                          color: Colors.blueGrey,
+                                          size: 16,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  if (_isDescriptionExpanded)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 2.0),
+                                      child: Text(
+                                        description,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall,
+                                      ),
+                                    ),
+                                ],
                               ],
                             ),
                           ),
@@ -334,6 +561,17 @@ class _EquipmentCardState extends State<EquipmentCard> {
                             ),
                         ],
                       ),
+                      if ((data['tags'] as List?)?.isNotEmpty == true) ...[
+                        const SizedBox(height: 6),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 6,
+                          children:
+                              ((data['tags'] as List?)?.cast<String>() ?? [])
+                                  .map((t) => Chip(label: Text(t)))
+                                  .toList(),
+                        ),
+                      ],
                       const SizedBox(height: 6),
                       StreamBuilder<QuerySnapshot>(
                         stream: CareCenterRepository.reservationsCol
@@ -448,16 +686,6 @@ class _EquipmentCardState extends State<EquipmentCard> {
                               ),
                           ],
                         ),
-                      const SizedBox(height: 6),
-                      if ((data['tags'] as List?)?.isNotEmpty == true)
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 6,
-                          children:
-                              ((data['tags'] as List?)?.cast<String>() ?? [])
-                                  .map((t) => Chip(label: Text(t)))
-                                  .toList(),
-                        ),
                       if (images.length > 1) ...[
                         const SizedBox(height: 8),
                         SizedBox(
@@ -488,6 +716,7 @@ class _EquipmentCardState extends State<EquipmentCard> {
                 ),
               ],
             ),
+
             const SizedBox(height: 10),
             if (isAdmin)
               Row(

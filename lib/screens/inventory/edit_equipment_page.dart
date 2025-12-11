@@ -18,6 +18,7 @@ class EditEquipmentPage extends StatefulWidget {
 }
 
 class _EditEquipmentPageState extends State<EditEquipmentPage> {
+  final _formKey = GlobalKey<FormState>();
   late TextEditingController _nameCtrl;
   late TextEditingController _descCtrl;
   late TextEditingController _locCtrl;
@@ -71,6 +72,8 @@ class _EditEquipmentPageState extends State<EditEquipmentPage> {
   }
 
   Future<void> _save() async {
+    if (!_formKey.currentState!.validate()) return;
+
     final qty = int.tryParse(_qtyCtrl.text) ?? 1;
     final price = _priceCtrl.text.trim().isEmpty
         ? null
@@ -127,8 +130,10 @@ class _EditEquipmentPageState extends State<EditEquipmentPage> {
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  children: [
                   TextFormField(
                     controller: _imageCtrl,
                     decoration: const InputDecoration(
@@ -144,6 +149,8 @@ class _EditEquipmentPageState extends State<EditEquipmentPage> {
                       labelText: 'Name',
                       prefixIcon: Icon(Icons.label_rounded),
                     ),
+                    validator: (v) =>
+                        v == null || v.trim().isEmpty ? 'Enter name' : null,
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
@@ -200,6 +207,9 @@ class _EditEquipmentPageState extends State<EditEquipmentPage> {
                       labelText: 'Description',
                       prefixIcon: Icon(Icons.description_rounded),
                     ),
+                    validator: (v) => v == null || v.trim().isEmpty
+                        ? 'Enter description'
+                        : null,
                   ),
                   const SizedBox(height: 12),
                   TextFormField(
@@ -208,6 +218,9 @@ class _EditEquipmentPageState extends State<EditEquipmentPage> {
                       labelText: 'Location',
                       prefixIcon: Icon(Icons.place_rounded),
                     ),
+                    validator: (v) => v == null || v.trim().isEmpty
+                        ? 'Enter location'
+                        : null,
                   ),
                   const SizedBox(height: 12),
                   TextFormField(
@@ -217,6 +230,9 @@ class _EditEquipmentPageState extends State<EditEquipmentPage> {
                       labelText: 'Quantity total',
                       prefixIcon: Icon(Icons.countertops_rounded),
                     ),
+                    validator: (v) => v == null || v.trim().isEmpty
+                        ? 'Enter quantity'
+                        : null,
                   ),
                   const SizedBox(height: 12),
                   TextFormField(
@@ -313,6 +329,7 @@ class _EditEquipmentPageState extends State<EditEquipmentPage> {
                 ],
               ),
             ),
+          ),
           ),
         ],
       ),

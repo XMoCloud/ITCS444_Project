@@ -210,6 +210,9 @@ class _AddEquipmentPageState extends State<AddEquipmentPage> {
                         labelText: 'Description',
                         prefixIcon: Icon(Icons.description_rounded),
                       ),
+                      validator: (v) => v == null || v.trim().isEmpty
+                          ? 'Enter description'
+                          : null,
                     ),
                     const SizedBox(height: 12),
                     TextFormField(
@@ -219,6 +222,9 @@ class _AddEquipmentPageState extends State<AddEquipmentPage> {
                         labelText: 'Quantity',
                         prefixIcon: Icon(Icons.countertops_rounded),
                       ),
+                      validator: (v) => v == null || v.trim().isEmpty
+                          ? 'Enter quantity'
+                          : null,
                     ),
                     const SizedBox(height: 12),
                     TextFormField(
@@ -227,6 +233,9 @@ class _AddEquipmentPageState extends State<AddEquipmentPage> {
                         labelText: 'Location',
                         prefixIcon: Icon(Icons.place_rounded),
                       ),
+                      validator: (v) => v == null || v.trim().isEmpty
+                          ? 'Enter location'
+                          : null,
                     ),
                     const SizedBox(height: 12),
                     TextFormField(

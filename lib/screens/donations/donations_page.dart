@@ -15,9 +15,9 @@ class DonationsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final isAdmin = role == 'admin';
 
-    if (!isAdmin && userId == null) {
-      return const Center(child: Text('Sign in to view your donations.'));
-    }
+    // if (!isAdmin && userId == null) {
+    //   return const Center(child: Text('Sign in to view your donations.'));
+    // }
 
     return Column(
       children: [
@@ -27,17 +27,14 @@ class DonationsPage extends StatelessWidget {
             children: [
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: userId == null
-                      ? null
-                      : () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) =>
-                                  DonationFormPage(donorId: userId!),
-                            ),
-                          );
-                        },
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => DonationFormPage(donorId: userId),
+                      ),
+                    );
+                  },
                   icon: const Icon(Icons.volunteer_activism_rounded),
                   label: const Text('Offer a donation'),
                 ),
@@ -46,12 +43,19 @@ class DonationsPage extends StatelessWidget {
           ),
         ),
         Expanded(
-          child: StreamBuilder<QuerySnapshot>(
-            stream: isAdmin
-                ? CareCenterRepository.donationsCol.snapshots()
-                : CareCenterRepository.donationsCol
-                      .where('donorId', isEqualTo: userId)
-                      .snapshots(),
+          child: (!isAdmin && userId == null)
+              ? const Center(
+                  child: Text(
+                    'Sign in to view your history.\nYou can still donate as a Guest.',
+                    textAlign: TextAlign.center,
+                  ),
+                )
+              : StreamBuilder<QuerySnapshot>(
+                  stream: isAdmin
+                      ? CareCenterRepository.donationsCol.snapshots()
+                      : CareCenterRepository.donationsCol
+                          .where('donorId', isEqualTo: userId)
+                          .snapshots(),
             builder: (context, snap) {
               if (snap.hasError) {
                 return Center(child: Text('Error: ${snap.error}'));

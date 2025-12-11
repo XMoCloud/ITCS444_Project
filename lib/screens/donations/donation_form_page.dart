@@ -3,7 +3,7 @@ import '../../services/repository.dart';
 import '../../ui/custom_toast.dart';
 
 class DonationFormPage extends StatefulWidget {
-  final String donorId;
+  final String? donorId;
   const DonationFormPage({super.key, required this.donorId});
 
   @override
@@ -15,18 +15,24 @@ class _DonationFormPageState extends State<DonationFormPage> {
   final _donorNameCtrl = TextEditingController();
   final _contactCtrl = TextEditingController();
   final _qtyCtrl = TextEditingController(text: '1');
-  final _descCtrl = TextEditingController();
   final _imageCtrl = TextEditingController();
   String _itemType = 'wheelchair';
   String _condition = 'good';
   bool _saving = false;
 
   @override
+  void initState() {
+    super.initState();
+    if (widget.donorId == null) {
+      _donorNameCtrl.text = 'Guest';
+    }
+  }
+
+  @override
   void dispose() {
     _donorNameCtrl.dispose();
     _contactCtrl.dispose();
     _qtyCtrl.dispose();
-    _descCtrl.dispose();
     _imageCtrl.dispose();
     super.dispose();
   }
@@ -45,7 +51,7 @@ class _DonationFormPageState extends State<DonationFormPage> {
       itemType: _itemType,
       condition: _condition,
       quantity: qty,
-      description: _descCtrl.text.trim(),
+      description: '',
       photos: imageUrl.isNotEmpty ? [imageUrl] : [],
     );
 
@@ -80,6 +86,7 @@ class _DonationFormPageState extends State<DonationFormPage> {
                     const SizedBox(height: 12),
                     TextFormField(
                       controller: _donorNameCtrl,
+                      readOnly: widget.donorId == null,
                       decoration: const InputDecoration(
                         labelText: 'Name',
                         prefixIcon: Icon(Icons.person_rounded),
@@ -157,15 +164,7 @@ class _DonationFormPageState extends State<DonationFormPage> {
                         prefixIcon: Icon(Icons.countertops_rounded),
                       ),
                     ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: _descCtrl,
-                      maxLines: 3,
-                      decoration: const InputDecoration(
-                        labelText: 'Description',
-                        prefixIcon: Icon(Icons.description_rounded),
-                      ),
-                    ),
+
                     const SizedBox(height: 16),
                     SizedBox(
                       width: double.infinity,
