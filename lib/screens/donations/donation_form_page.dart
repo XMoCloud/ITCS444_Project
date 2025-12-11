@@ -78,9 +78,10 @@ class _DonationFormPageState extends State<DonationFormPage> {
                     TextFormField(
                       controller: _imageCtrl,
                       decoration: const InputDecoration(
-                        labelText: 'Image URL',
-                        prefixIcon: Icon(Icons.link_rounded),
-                        hintText: 'https://example.com/image.jpg',
+                        labelText: 'Image Name',
+                        prefixIcon: Icon(Icons.image_rounded),
+                        hintText: 'e.g. wheelchair.png',
+                        helperText: 'Enter filename from assets/images/',
                       ),
                     ),
                     const SizedBox(height: 12),

@@ -133,6 +133,30 @@ class _DonationTile extends StatelessWidget {
     }
   }
 
+  Widget _buildImage(String? url, {double? width, double? height, BoxFit? fit}) {
+    if (url == null || url.isEmpty) {
+      return const Icon(Icons.card_giftcard_rounded, size: 32);
+    }
+    if (url.startsWith('http')) {
+      return Image.network(
+        url,
+        width: width,
+        height: height,
+        fit: fit,
+        errorBuilder: (_, __, ___) => const Icon(Icons.card_giftcard_rounded, size: 32),
+      );
+    }
+    // Assume asset
+    final assetPath = url.startsWith('assets/') ? url : 'assets/images/$url';
+    return Image.asset(
+      assetPath,
+      width: width,
+      height: height,
+      fit: fit,
+      errorBuilder: (_, __, ___) => const Icon(Icons.card_giftcard_rounded, size: 32),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final rawName = (data['donorName'] ?? '').toString();
@@ -170,28 +194,10 @@ class _DonationTile extends StatelessWidget {
                       width: 60,
                       height: 60,
                       color: Colors.grey[200],
-                      child: imageUrl != null
-                          ? Image.network(
-                              imageUrl,
-                              fit: BoxFit.cover,
-                              loadingBuilder: (context, child, progress) {
-                                if (progress == null) return child;
-                                return const Center(
-                                  child: SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  ),
-                                );
-                              },
-                              errorBuilder: (context, err, stack) => const Icon(
-                                Icons.card_giftcard_rounded,
-                                size: 32,
-                              ),
-                            )
-                          : const Icon(Icons.card_giftcard_rounded, size: 32),
+                      child: _buildImage(
+                        imageUrl,
+                        fit: BoxFit.cover,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -243,7 +249,7 @@ class _DonationTile extends StatelessWidget {
                         padding: const EdgeInsets.only(right: 8.0),
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(8),
-                          child: Image.network(
+                          child: _buildImage(
                             img,
                             width: 56,
                             height: 56,

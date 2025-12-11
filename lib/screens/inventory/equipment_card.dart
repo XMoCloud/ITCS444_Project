@@ -51,6 +51,43 @@ class EquipmentCard extends StatefulWidget {
     return Theme.of(ctx).colorScheme.primary;
   }
 
+  Widget _buildImage(String? url, {double? width, double? height, BoxFit? fit}) {
+    final type = data['type'] ?? 'type';
+    if (url == null || url.isEmpty) {
+      return Icon(
+        _typeIcon(type.toString()),
+        size: 40,
+        color: Colors.grey,
+      );
+    }
+    if (url.startsWith('http')) {
+      return Image.network(
+        url,
+        width: width,
+        height: height,
+        fit: fit,
+        errorBuilder: (_, __, ___) => Icon(
+          _typeIcon(type.toString()),
+          size: 40,
+          color: Colors.grey,
+        ),
+      );
+    }
+    // Assume asset
+    final assetPath = url.startsWith('assets/') ? url : 'assets/images/$url';
+    return Image.asset(
+      assetPath,
+      width: width,
+      height: height,
+      fit: fit,
+      errorBuilder: (_, __, ___) => Icon(
+        _typeIcon(type.toString()),
+        size: 40,
+        color: Colors.grey,
+      ),
+    );
+  }
+
   @override
   State<EquipmentCard> createState() => _EquipmentCardState();
 }
@@ -198,21 +235,10 @@ class _EquipmentCardState extends State<EquipmentCard> {
                     const BorderRadius.vertical(top: Radius.circular(16)),
                 child: Container(
                   color: Colors.grey[100],
-                  child: imageUrl != null
-                      ? Image.network(
-                          imageUrl,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Icon(
-                            widget._typeIcon(type.toString()),
-                            size: 40,
-                            color: Colors.grey,
-                          ),
-                        )
-                      : Icon(
-                          widget._typeIcon(type.toString()),
-                          size: 40,
-                          color: Colors.grey,
-                        ),
+                  child: widget._buildImage(
+                    imageUrl,
+                    fit: BoxFit.cover,
+                  ),
                 ),
               ),
             ),
@@ -398,33 +424,10 @@ class _EquipmentCardState extends State<EquipmentCard> {
                       width: 90,
                       height: 90,
                       color: Colors.transparent,
-                      child: imageUrl != null
-                          ? Image.network(
-                              imageUrl,
-                              fit: BoxFit.cover,
-                              loadingBuilder: (context, child, progress) {
-                                if (progress == null) return child;
-                                return const Center(
-                                  child: SizedBox(
-                                    width: 24,
-                                    height: 24,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  ),
-                                );
-                              },
-                              errorBuilder: (context, err, stack) => Icon(
-                                widget._typeIcon(type.toString()),
-                                size: 40,
-                                color: Colors.grey[700],
-                              ),
-                            )
-                          : Icon(
-                              widget._typeIcon(type.toString()),
-                              size: 40,
-                              color: Colors.grey[700],
-                            ),
+                      child: widget._buildImage(
+                        imageUrl,
+                        fit: BoxFit.cover,
+                      ),
                     ),
                   ),
                 ),
@@ -699,7 +702,7 @@ class _EquipmentCardState extends State<EquipmentCard> {
                                 padding: const EdgeInsets.only(right: 8.0),
                                 child: ClipRRect(
                                   borderRadius: BorderRadius.circular(8),
-                                  child: Image.network(
+                                  child: widget._buildImage(
                                     img,
                                     width: 56,
                                     height: 56,
